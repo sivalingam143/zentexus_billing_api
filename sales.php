@@ -1,3 +1,19 @@
+<?php
+include 'db/config.php';
+
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    exit();
+}
+header('Content-Type: application/json; charset=utf-8');
+$json = file_get_contents('php://input');
+$obj = json_decode($json);
+$output = array();
+date_default_timezone_set('Asia/Calcutta');
+$timestamp = date('Y-m-d H:i:s');
+
 if (isset($obj->search_text)) {
     $search_text = $obj->search_text;
     $sql = "SELECT * FROM `sales` WHERE `delete_at` = 0 AND `name` LIKE '%$search_text%' ORDER BY `id` DESC";
@@ -89,5 +105,26 @@ else if (isset($obj->delete_sales_id)) {
 } else {
     $output["head"]["code"] = 400;
     $output["head"]["msg"] = "Parameter is Mismatch";
+}
+
+// <<<<<<<<<<===================== This is to list all sales =====================>>>>>>>>>>
+
+if (isset($obj->list_sales)) { 
+    // ⭐️ FIX 1: Query the 'sales' table for all active sales records
+    $sql = "SELECT * FROM `sales` WHERE `delete_at` = 0 ORDER BY `sale_id` DESC";
+    $result = $conn->query($sql);
+    
+    $output["head"]["code"] = 200;
+    $output["head"]["msg"] = "Success";
+    // ⭐️ FIX 2: Use a clear key for the sales array
+    $output["body"]["sales"] = []; 
+    
+    if ($result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $output["body"]["sales"][] = $row;
+        }
+    } else {
+        $output["head"]["msg"] = "Sales records not found";
+    }
 }
 echo json_encode($output, JSON_NUMERIC_CHECK);
