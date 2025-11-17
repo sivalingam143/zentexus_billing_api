@@ -19,4 +19,16 @@ header('Content-Type: application/json');
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
+
+function uniqueID($prefix_name, $auto_increment_id)
+{
+
+    date_default_timezone_set('Asia/Calcutta');
+    $timestamp = date('Y-m-d H:i:s');
+    $encryptId = $prefix_name . "" . $timestamp . "" . $auto_increment_id;
+
+    $hashid = md5($encryptId);
+
+    return $hashid;
+}
 ?>
