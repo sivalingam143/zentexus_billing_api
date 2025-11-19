@@ -43,9 +43,10 @@ else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
     $rount_off = isset($obj->rount_off) ? $obj->rount_off : 0;
     $round_off_amount = isset($obj->round_off_amount) ? $obj->round_off_amount : 0;
     $total = isset($obj->total) ? $obj->total : 0;
+    $payment_type = isset($obj->payment_type) ? $obj->payment_type : '';
     $unitCheck = $conn->query("SELECT `id` FROM `sales` WHERE `invoice_no`='$invoice_no' AND delete_at = 0");
     if ($unitCheck->num_rows == 0) {
-        $createUnit = "INSERT INTO `sales`(`sale_id`, `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `total`, `create_at`, `delete_at`) VALUES (NULL, '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$rount_off', '$round_off_amount', '$total', '$timestamp', '0')";
+        $createUnit = "INSERT INTO `sales`(`sale_id`, `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `payment_type`, `total`, `create_at`, `delete_at`) VALUES (NULL, '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$rount_off', '$round_off_amount', '$payment_type', '$total', '$timestamp', '0')";
         if ($conn->query($createUnit)) {
             $id = $conn->insert_id;
             $enId = uniqueID('sale', $id);
@@ -77,7 +78,8 @@ else if (isset($obj->edit_sales_id)) {
     $rount_off = isset($obj->rount_off) ? $obj->rount_off : 0;
     $round_off_amount = isset($obj->round_off_amount) ? $obj->round_off_amount : 0;
     $total = isset($obj->total) ? $obj->total : 0;
-    $updateUnit = "UPDATE `sales` SET `parties_id`='$parties_id', `name`='$name', `phone`='$phone', `billing_address`='$billing_address', `shipping_address`='$shipping_address', `invoice_no`='$invoice_no', `invoice_date`='$invoice_date', `state_of_supply`='$state_of_supply', `products`='$products', `rount_off`='$rount_off', `round_off_amount`='$round_off_amount', `total`='$total' WHERE `sale_id`='$edit_id'";
+    $payment_type = isset($obj->payment_type) ? $obj->payment_type : '';
+    $updateUnit = "UPDATE `sales` SET `parties_id`='$parties_id', `name`='$name', `phone`='$phone', `billing_address`='$billing_address', `shipping_address`='$shipping_address', `invoice_no`='$invoice_no', `invoice_date`='$invoice_date', `state_of_supply`='$state_of_supply', `products`='$products', `rount_off`='$rount_off', `round_off_amount`='$round_off_amount', `payment_type`='$payment_type', `total`='$total' WHERE `sale_id`='$edit_id'";
     if ($conn->query($updateUnit)) {
         $output["head"]["code"] = 200;
         $output["head"]["msg"] = "Successfully sale Details Updated";
@@ -107,24 +109,4 @@ else if (isset($obj->delete_sales_id)) {
     $output["head"]["msg"] = "Parameter is Mismatch";
 }
 
-// <<<<<<<<<<===================== This is to list all sales =====================>>>>>>>>>>
-
-if (isset($obj->list_sales)) { 
-    // ⭐️ FIX 1: Query the 'sales' table for all active sales records
-    $sql = "SELECT * FROM `sales` WHERE `delete_at` = 0 ORDER BY `sale_id` DESC";
-    $result = $conn->query($sql);
-    
-    $output["head"]["code"] = 200;
-    $output["head"]["msg"] = "Success";
-    // ⭐️ FIX 2: Use a clear key for the sales array
-    $output["body"]["sales"] = []; 
-    
-    if ($result->num_rows > 0) {
-        while ($row = $result->fetch_assoc()) {
-            $output["body"]["sales"][] = $row;
-        }
-    } else {
-        $output["head"]["msg"] = "Sales records not found";
-    }
-}
 echo json_encode($output, JSON_NUMERIC_CHECK);
