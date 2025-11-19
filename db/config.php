@@ -12,13 +12,6 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-// Set content type to JSON
-header('Content-Type: application/json');
-
-// Allow CORS for React
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
 
 function uniqueID($prefix_name, $auto_increment_id)
 {
