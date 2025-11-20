@@ -45,9 +45,10 @@ else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
     $total = isset($obj->total) ? $obj->total : 0;
     $payment_type = isset($obj->payment_type) ? $obj->payment_type : '';
     $description = isset($obj->description) ? $obj->description : '';
+    $add_image = $conn->real_escape_string($obj->add_image ?? '');
     $unitCheck = $conn->query("SELECT `id` FROM `sales` WHERE `invoice_no`='$invoice_no' AND delete_at = 0");
     if ($unitCheck->num_rows == 0) {
-        $createUnit = "INSERT INTO `sales`(`sale_id`, `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `payment_type`,`description`,`total`, `create_at`, `delete_at`) VALUES (NULL, '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$rount_off', '$round_off_amount', '$payment_type', '$description','$total', '$timestamp', '0')";
+        $createUnit = "INSERT INTO `sales`(`sale_id`, `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `payment_type`,`description`,`add_image`,`total`, `create_at`, `delete_at`) VALUES (NULL, '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$rount_off', '$round_off_amount', '$payment_type','$description','$add_image','$total', '$timestamp', '0')";
         if ($conn->query($createUnit)) {
             $id = $conn->insert_id;
             $enId = uniqueID('sale', $id);
@@ -82,6 +83,7 @@ else if (isset($obj->edit_sales_id)) {
     $payment_type = isset($obj->payment_type) ? $obj->payment_type : '';
     $description = isset($obj->description) ? $obj->description : '';
     $add_image= isset($obj->add_image) ? $obj->add_image : '';
+    // $add_image        = $conn->real_escape_string($obj->add_image ?? '');
     $updateUnit = "UPDATE `sales` SET `parties_id`='$parties_id', `name`='$name', `phone`='$phone', `billing_address`='$billing_address', `shipping_address`='$shipping_address', `invoice_no`='$invoice_no', `invoice_date`='$invoice_date', `state_of_supply`='$state_of_supply', `products`='$products', `rount_off`='$rount_off', `round_off_amount`='$round_off_amount', `payment_type`='$payment_type',`description`='$description',`add_image`='$add_image' `total`='$total' WHERE `sale_id`='$edit_id'";
     if ($conn->query($updateUnit)) {
         $output["head"]["code"] = 200;
