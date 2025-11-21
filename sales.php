@@ -65,32 +65,58 @@ else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
         $output["head"]["msg"] = "sale Invoice No Already Exist.";
     }
 }
+
 // <<<<<<<<<<===================== This is to Edit sale =====================>>>>>>>>>>
 else if (isset($obj->edit_sales_id)) {
     $edit_id = $obj->edit_sales_id;
-    $parties_id = isset($obj->parties_id) ? $obj->parties_id : '';
-    $name = $obj->name;
-    $phone = isset($obj->phone) ? $obj->phone : '';
-    $billing_address = isset($obj->billing_address) ? $obj->billing_address : '';
-    $shipping_address = isset($obj->shipping_address) ? $obj->shipping_address : '';
-    $invoice_no = $obj->invoice_no;
-    $invoice_date = isset($obj->invoice_date) ? $obj->invoice_date : '';
-    $state_of_supply = isset($obj->state_of_supply) ? $obj->state_of_supply : '';
-    $products = isset($obj->products) ? $obj->products : '';
-    $rount_off = isset($obj->rount_off) ? $obj->rount_off : 0;
-    $round_off_amount = isset($obj->round_off_amount) ? $obj->round_off_amount : 0;
-    $total = isset($obj->total) ? $obj->total : 0;
-    $payment_type = isset($obj->payment_type) ? $obj->payment_type : '';
-    $description = isset($obj->description) ? $obj->description : '';
-    $add_image= isset($obj->add_image) ? $obj->add_image : '';
-    // $add_image        = $conn->real_escape_string($obj->add_image ?? '');
-    $updateUnit = "UPDATE `sales` SET `parties_id`='$parties_id', `name`='$name', `phone`='$phone', `billing_address`='$billing_address', `shipping_address`='$shipping_address', `invoice_no`='$invoice_no', `invoice_date`='$invoice_date', `state_of_supply`='$state_of_supply', `products`='$products', `rount_off`='$rount_off', `round_off_amount`='$round_off_amount', `payment_type`='$payment_type',`description`='$description',`add_image`='$add_image' `total`='$total' WHERE `sale_id`='$edit_id'";
+    if (empty($edit_id)) {
+        $output["head"]["code"] = 400;
+        $output["head"]["msg"] = "Edit ID is required";
+        echo json_encode($output, JSON_NUMERIC_CHECK);
+        exit;
+    }
+
+    $parties_id         = $conn->real_escape_string($obj->parties_id ?? '');
+    $name              = $conn->real_escape_string($obj->name ?? '');
+    $phone            = $conn->real_escape_string($obj->phone ?? '');
+    $billing_address   = $conn->real_escape_string($obj->billing_address ?? '');
+    $shipping_address  = $conn->real_escape_string($obj->shipping_address ?? '');
+    $invoice_no       = $conn->real_escape_string($obj->invoice_no ?? '');
+    $invoice_date     = $obj->invoice_date ?? '';
+    $state_of_supply   = $conn->real_escape_string($obj->state_of_supply ?? '');
+    $products          = $obj->products ?? '';
+    $rount_off         = $obj->rount_off ?? 0;
+    $round_off_amount  = $obj->round_off_amount ?? 0;
+    $total            = $obj->total ?? 0;
+    $payment_type      = $conn->real_escape_string($obj->payment_type ?? '');
+    $description       = $conn->real_escape_string($obj->description ?? '');
+    $add_image         = $conn->real_escape_string($obj->add_image ?? '');
+
+    // FIX: Added missing quote and space before WHERE
+    $updateUnit = "UPDATE `sales` SET 
+        `parties_id`='$parties_id',
+        `name`='$name',
+        `phone`='$phone',
+        `billing_address`='$billing_address',
+        `shipping_address`='$shipping_address',
+        `invoice_no`='$invoice_no',
+        `invoice_date`='$invoice_date',
+        `state_of_supply`='$state_of_supply',
+        `products`='$products',
+        `rount_off`='$rount_off',
+        `round_off_amount`='$round_off_amount',
+        `payment_type`='$payment_type',
+        `description`='$description',
+        `add_image`='$add_image',
+        `total`='$total' 
+        WHERE `sale_id`='$edit_id'";  // ← THIS WAS BROKEN BEFORE
+
     if ($conn->query($updateUnit)) {
         $output["head"]["code"] = 200;
         $output["head"]["msg"] = "Successfully sale Details Updated";
     } else {
         $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "Failed to connect. Please try again.";
+        $output["head"]["msg"] = "SQL Error: " . $conn->error; // helpful for debugging
     }
 }
 // <<<<<<<<<<===================== This is to Delete the sale =====================>>>>>>>>>>
