@@ -8,141 +8,172 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 header('Content-Type: application/json; charset=utf-8');
+
 $json = file_get_contents('php://input');
 $obj = json_decode($json);
 $output = array();
 date_default_timezone_set('Asia/Calcutta');
 $timestamp = date('Y-m-d H:i:s');
 
-// <<<<<<<<<<===================== This is to list parties =====================>>>>>>>>>>
-
+// <<<<<<<<<<<<<<< LIST PARTIES - WITH OPENING BALANCE AS FIRST TRANSACTION >>>>>>>>>>>>>>>
 if (isset($obj->search_text)) {
-    $search_text = $obj->search_text;
-    $sql = "SELECT * FROM parties WHERE delete_at = 0 AND name LIKE '%$search_text%' ORDER BY id DESC";
-    $result = $conn->query($sql);
+    $search_text = $obj->search_text ?? '';
+    $search_text = $conn->real_escape_string($search_text);
+
+    $sql = "SELECT *, amount, balance_type, create_at FROM parties 
+            WHERE delete_at = 0 AND name LIKE '%$search_text%' 
+            ORDER BY id DESC";
+
+    $result = $conn->query($sql); // ← This line was missing in your broken version!
+
     $output["head"]["code"] = 200;
     $output["head"]["msg"] = "Success";
     $output["body"]["parties"] = [];
- 
-    if ($result->num_rows > 0) {
+
+    if ($result && $result->num_rows > 0) {
         while ($row = $result->fetch_assoc()) {
+            $amount      = floatval($row['amount']);
+            $balanceType = $row['balance_type']; // 'to pay' or 'to receive'
+
+            // For list display
+            if ($amount > 0) {
+                $row['balance_type'] = $balanceType === 'to pay' ? 'To Pay' : 'To Receive';
+            } else {
+                $row['balance_type'] = 'Nil';
+            }
+
+            // For edit modal toggle
+            $row['transactionType'] = ($balanceType === 'to pay') ? 'pay' : 'receive';
+
+            $row['display_amount'] = $amount;
+
+            // === ADD OPENING BALANCE AS FIRST TRANSACTION ===
+            $opening = null;
+            if ($amount > 0) {
+                $label = $balanceType === 'to pay' ? ' Payable Balance' : 'Receivable Balance';
+                $color = $balanceType === 'to pay' ? 'red' : 'green';
+
+                $opening = [
+                    "type"          => "Opening Balance",
+                    "number"        => "-",
+                    "date"          => date('d-m-Y', strtotime($row['create_at'] ?? $timestamp)),
+                    "total"         => $amount,
+                    "balance"       => $amount,
+                    "balance_label" => $label,
+                    "color"         => $color
+                ];
+            }
+
+            // Initialize transactions array with opening balance
+            $row['transactions'] = $opening ? [$opening] : [];
+
             $output["body"]["parties"][] = $row;
         }
     } else {
-        $output["head"]["msg"] = "parties records not found";
+        $output["head"]["msg"] = "No parties found";
     }
 }
-// <<<<<<<<<<===================== This is to Create party =====================>>>>>>>>>>
+
+// <<<<<<<<<<<<<<< CREATE NEW PARTY >>>>>>>>>>>>>>>
 else if (isset($obj->name) && !isset($obj->edit_parties_id)) {
-    $name = $obj->name;
-    $gstin = isset($obj->gstin) ? $obj->gstin : '';
-    $phone = isset($obj->phone) ? $obj->phone : '';
-    $email = isset($obj->email) ? $obj->email : '';
-    $billing_address = isset($obj->billing_address) ? $obj->billing_address : '';
-    $shipping_address = isset($obj->shipping_address) ? $obj->shipping_address : '';
-    $amount = isset($obj->amount) ? $obj->amount : 0;
-    
-    // 🌟 FIX: Uncommented and initialized missing variables
-    $creditlimit = isset($obj->creditlimit) ? $obj->creditlimit : 0;
+    $name             = $conn->real_escape_string($obj->name);
+    $gstin            = $obj->gstin ?? '';
+    $phone            = $obj->phone ?? '';
+    $email            = $obj->email ?? '';
+    $billing_address  = $obj->billing_address ?? '';
+    $shipping_address = $obj->shipping_address ?? '';
+    $amount           = floatval($obj->amount ?? 0);
+    $creditlimit      = floatval($obj->creditlimit ?? 0);
+    $state_of_supply  = $obj->state_of_supply ?? '';
+    $gstin_type_id    = $obj->gstin_type_id ?? '';
+    $gstin_type_name  = $obj->gstin_type_name ?? '';
+    $additional_field = $obj->additional_field ?? '';
 
-    
-    $state_of_supply = isset($obj->state_of_supply) ? $obj->state_of_supply : ''; 
-    $gstin_type_id = isset($obj->gstin_type_id) ? $obj->gstin_type_id : ''; 
-    $gstin_type_name = isset($obj->gstin_type_name) ? $obj->gstin_type_name : '';
-    // Additional Field is collected here
-    $additional_field = isset($obj->additional_field) ? $obj->additional_field : '';
-    
-    $unitCheck = $conn->query("SELECT id FROM parties WHERE name='$name' AND delete_at = 0");
-    if ($unitCheck->num_rows == 0) {
-        // 🌟 FIX: Added 'limittype' to column list and fixed the missing single quote after $creditlimit
-        $createUnit = "INSERT INTO parties(name, gstin, phone, gstin_type_id, gstin_type_name, email, state_of_supply, billing_address, shipping_address, amount, additional_field, creditlimit, create_at, delete_at) 
-                        VALUES ('$name', '$gstin', '$phone', '$gstin_type_id', '$gstin_type_name', '$email', '$state_of_supply', '$billing_address', '$shipping_address', '$amount', '$additional_field', '$creditlimit', '$timestamp', '0')";
-        
-        if ($conn->query($createUnit)) {
+    $balance_type = ($obj->transactionType === 'pay') ? 'to pay' : 'to receive';
+
+    $check = $conn->query("SELECT id FROM parties WHERE name='$name' AND delete_at = 0");
+    if ($check->num_rows == 0) {
+        $sql = "INSERT INTO parties (
+                    name, gstin, phone, gstin_type_id, gstin_type_name, email,
+                    state_of_supply, billing_address, shipping_address,
+                    amount, balance_type, additional_field, creditlimit, create_at, delete_at
+                ) VALUES (
+                    '$name','$gstin','$phone','$gstin_type_id','$gstin_type_name','$email',
+                    '$state_of_supply','$billing_address','$shipping_address',
+                    '$amount','$balance_type','$additional_field','$creditlimit','$timestamp','0'
+                )";
+
+        if ($conn->query($sql)) {
             $id = $conn->insert_id;
-            // Assuming uniqueID function is defined in config.php
-            $enId = uniqueID('party', $id); 
-            $updateUserId = "update parties SET parties_id ='$enId' WHERE id='$id'";
-            $conn->query($updateUserId);
+            $enId = uniqueID('party', $id);
+            $conn->query("UPDATE parties SET parties_id='$enId' WHERE id='$id'");
+
             $output["head"]["code"] = 200;
-            $output["head"]["msg"] = "Successfully party Created";
+            $output["head"]["msg"] = "Party Created Successfully";
         } else {
-            // Added MySQL error output for better debugging, remove $conn->error in production
             $output["head"]["code"] = 400;
-            $output["head"]["msg"] = "Failed to create party. Error: " . $conn->error; 
+            $output["head"]["msg"] = "Error: " . $conn->error;
         }
     } else {
         $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "party Name Already Exist.";
-    }
-}
-// <<<<<<<<<<===================== This is to Edit party =====================>>>>>>>>>>
-else if (isset($obj->edit_parties_id)) {
-    $edit_id = $obj->edit_parties_id;
-    $name = $obj->name;
-    $gstin = isset($obj->gstin) ? $obj->gstin : '';
-    $phone = isset($obj->phone) ? $obj->phone : '';
-    $email = isset($obj->email) ? $obj->email : '';
-    $billing_address = isset($obj->billing_address) ? $obj->billing_address : '';
-    $shipping_address = isset($obj->shipping_address) ? $obj->shipping_address : '';
-    $amount = isset($obj->amount) ? $obj->amount : 0;
-    // Additional Field is collected here
-    $additional_field = isset($obj->additional_field) ? $obj->additional_field : ''; 
-    
-    // 🌟 FIX: Uncommented and initialized missing variables
-    $creditlimit = isset($obj->creditlimit) ? $obj->creditlimit : 0;
-  
-    
-    $state_of_supply = isset($obj->state_of_supply) ? $obj->state_of_supply : '';
-    $gstin_type_id = isset($obj->gstin_type_id) ? $obj->gstin_type_id : ''; 
-    $gstin_type_name = isset($obj->gstin_type_name) ? $obj->gstin_type_name : '';
-    
-    // 🌟 FIX: Removed the SQL comment and correctly set the limittype
-    $updateUnit = "UPDATE parties SET 
-        name='$name', 
-        gstin='$gstin', 
-        phone='$phone', 
-        gstin_type_id='$gstin_type_id', 
-        gstin_type_name='$gstin_type_name', 
-        email='$email', 
-        state_of_supply='$state_of_supply', 
-        billing_address='$billing_address', 
-        shipping_address='$shipping_address', 
-        amount='$amount', 
-        additional_field='$additional_field', 
-        creditlimit='$creditlimit' 
-        
-    WHERE parties_id='$edit_id'";
-    
-   if ($conn->query($updateUnit)) {
-        $output["head"]["code"] = 200;
-        $output["head"]["msg"] = "Successfully party Details Updated";
-    } else {
-        // Added MySQL error output for better debugging, remove $conn->error in production
-        $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "Failed to update party. Error: " . $conn->error;
+        $output["head"]["msg"] = "Party name already exists";
     }
 }
 
-// <<<<<<<<<<===================== This is to Delete the party =====================>>>>>>>>>>
-else if (isset($obj->delete_parties_id)) {
-    $delete_parties_id = $obj->delete_parties_id;
-    if (!empty($delete_parties_id)) {
-        $deleteUnit = "UPDATE parties SET delete_at=1 WHERE parties_id='$delete_parties_id'";
-        if ($conn->query($deleteUnit)) {
-            $output["head"]["code"] = 200;
-            $output["head"]["msg"] = "party Deleted Successfully.!";
-        } else {
-            $output["head"]["code"] = 400;
-            $output["head"]["msg"] = "Failed to connect. Please try again.";
-        }
+// <<<<<<<<<<<<<<< UPDATE PARTY >>>>>>>>>>>>>>>
+else if (isset($obj->edit_parties_id)) {
+    $edit_id          = $conn->real_escape_string($obj->edit_parties_id);
+    $name             = $conn->real_escape_string($obj->name);
+    $gstin            = $obj->gstin ?? '';
+    $phone            = $obj->phone ?? '';
+    $email            = $obj->email ?? '';
+    $billing_address  = $obj->billing_address ?? '';
+    $shipping_address = $obj->shipping_address ?? '';
+    $amount           = floatval($obj->amount ?? 0);
+    $creditlimit      = floatval($obj->creditlimit ?? 0);
+    $state_of_supply  = $obj->state_of_supply ?? '';
+    $gstin_type_id    = $obj->gstin_type_id ?? '';
+    $gstin_type_name  = $obj->gstin_type_name ?? '';
+    $additional_field = $obj->additional_field ?? '';
+
+    $balance_type = ($obj->transactionType === 'pay') ? 'to pay' : 'to receive';
+
+    $sql = "UPDATE parties SET
+                name='$name',
+                gstin='$gstin',
+                phone='$phone',
+                gstin_type_id='$gstin_type_id',
+                gstin_type_name='$gstin_type_name',
+                email='$email',
+                state_of_supply='$state_of_supply',
+                billing_address='$billing_address',
+                shipping_address='$shipping_address',
+                amount='$amount',
+                balance_type='$balance_type',
+                additional_field='$additional_field',
+                creditlimit='$creditlimit'
+            WHERE parties_id='$edit_id'";
+
+    if ($conn->query($sql)) {
+        $output["head"]["code"] = 200;
+        $output["head"]["msg"] = "Party Updated Successfully";
     } else {
         $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "Please provide all the required details.";
+        $output["head"]["msg"] = "Update failed: " . $conn->error;
     }
-} else {
-    $output["head"]["code"] = 400;
-    $output["head"]["msg"] = "Parameter is Mismatch";
 }
+
+// <<<<<<<<<<<<<<< DELETE PARTY >>>>>>>>>>>>>>>
+else if (isset($obj->delete_parties_id)) {
+    $id = $conn->real_escape_string($obj->delete_parties_id);
+    $sql = "UPDATE parties SET delete_at=1 WHERE parties_id='$id'";
+    $output["head"]["code"] = $conn->query($sql) ? 200 : 400;
+    $output["head"]["msg"]   = $conn->query($sql) ? "Party Deleted" : "Delete failed";
+}
+else {
+    $output["head"]["code"] = 400;
+    $output["head"]["msg"] = "Invalid request";
+}
+
 echo json_encode($output, JSON_NUMERIC_CHECK);
 ?>

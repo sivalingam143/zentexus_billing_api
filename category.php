@@ -1,69 +1,141 @@
 <?php
-// Assumes db/config.php provides $conn (MySQLi connection) and the uniqueID function
 include 'db/config.php';
 
 header('Access-Control-Allow-Origin: *');
-// ... (headers)
-// ... (setup variables)
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    exit();
+}
+
+header('Content-Type: application/json; charset=utf-8');
 
 $json = file_get_contents('php://input');
-$obj = json_decode($json);
+$obj = json_decode($json, true);
 $output = array();
-// ... (date/time setup)
+date_default_timezone_set('Asia/Calcutta');
+$timestamp = date('Y-m-d H:i:s');
 
-// ===================== 1. DELETE Logic =====================
-if (isset($obj->delete_categories_id)) {
-    $delete_categories_id = $obj->delete_categories_id;
-    if (!empty($delete_categories_id)) {
-        $deleteUnit = "UPDATE category SET delete_at=1 WHERE category_id='$delete_categories_id'";
-        if ($conn->query($deleteUnit)) {
+// ==================================================================
+// 1. Search / List Categories
+// ==================================================================
+if (isset($obj['search_text'])) {
+    $search_text = $conn->real_escape_string($obj['search_text']);
+    $sql = "SELECT * FROM category 
+            WHERE delete_at = 0 
+              AND category_name LIKE '%$search_text%' 
+            ORDER BY id DESC";
+
+    $result = $conn->query($sql);
+
+    $output["head"]["code"] = 200;
+    $output["head"]["msg"]  = "Success";
+    $output["body"]["categories"] = [];
+
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $output["body"]["categories"][] = $row;
+        }
+    } else {
+        $output["head"]["msg"] = "No categories found";
+    }
+}
+
+// ==================================================================
+// 2. Create New Category
+// ==================================================================
+else if (isset($obj['category_name']) && !isset($obj['edit_category_id'])) {
+    $category_name = $conn->real_escape_string($obj['category_name']);
+
+    // Check for duplicate category name
+    $check = $conn->query("SELECT id FROM category WHERE category_name = '$category_name' AND delete_at = 0");
+    if ($check->num_rows > 0) {
+        $output["head"]["code"] = 400;
+        $output["head"]["msg"]  = "Category name already exists.";
+    } else {
+        $insert = "INSERT INTO category (category_name, create_at, delete_at) 
+                   VALUES ('$category_name', '$timestamp', 0)";
+
+        if ($conn->query($insert)) {
+            $new_id = $conn->insert_id;
+
+            // Generate unique category_id (same logic as unit.php)
+            $enId = uniqueID('category', $new_id);
+
+            // Update the row with generated category_id
+            $conn->query("UPDATE category SET category_id = '$enId' WHERE id = '$new_id'");
+
             $output["head"]["code"] = 200;
-            $output["head"]["msg"] = "Category Deleted Successfully!";
+            $output["head"]["msg"]  = "Category created successfully";
+            $output["body"]["category_id"] = $enId;
         } else {
             $output["head"]["code"] = 400;
-            $output["head"]["msg"] = "Failed to delete category: " . $conn->error;
+            $output["head"]["msg"]  = "Failed to create category: " . $conn->error;
+        }
+    }
+}
+
+// ==================================================================
+// 3. Edit Existing Category
+// ==================================================================
+else if (isset($obj['edit_category_id']) && isset($obj['category_name'])) {
+    $edit_id       = $conn->real_escape_string($obj['edit_category_id']);
+    $category_name = $conn->real_escape_string($obj['category_name']);
+
+    // Prevent duplicate name except for current record
+    $check = $conn->query("SELECT id FROM category 
+                           WHERE category_name = '$category_name' 
+                             AND delete_at = 0 
+                             AND category_id != '$edit_id'");
+    if ($check->num_rows > 0) {
+        $output["head"]["code"] = 400;
+        $output["head"]["msg"]  = "Another category with this name already exists.";
+    } else {
+        $update = "UPDATE category SET 
+                        category_name = '$category_name'
+                   WHERE category_id = '$edit_id' AND delete_at = 0";
+
+        if ($conn->query($update)) {
+            $output["head"]["code"] = 200;
+            $output["head"]["msg"]  = "Category updated successfully";
+        } else {
+            $output["head"]["code"] = 400;
+            $output["head"]["msg"]  = "Update failed: " . $conn->error;
+        }
+    }
+}
+
+// ==================================================================
+// 4. Delete (Soft Delete) Category
+// ==================================================================
+else if (isset($obj['delete_category_id'])) {
+    $delete_id = $conn->real_escape_string($obj['delete_category_id']);
+
+    if (!empty($delete_id)) {
+        $delete = "UPDATE category SET delete_at = 1 WHERE category_id = '$delete_id'";
+        if ($conn->query($delete)) {
+            $output["head"]["code"] = 200;
+            $output["head"]["msg"]  = "Category deleted successfully";
+        } else {
+            $output["head"]["code"] = 400;
+            $output["head"]["msg"]  = "Delete failed: " . $conn->error;
         }
     } else {
         $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "Please provide the category ID for deletion.";
-    }
-} 
-// ===================== 2. LIST / SEARCH Logic (Runs if no other specific action is requested) =====================
-// This is your main listing block. It should run if search_text is present OR if nothing is present (empty POST body).
-// We'll run this block if NO specific action (like delete or create) was found.
-// The easiest way to handle the empty body (list all) is to check if it's NOT a creation or deletion request.
-else if (isset($obj->search_text) || !isset($obj->category_name)) { // Assume listing if no explicit action is given
-    
-    // Set search text. Use provided search text, otherwise default to empty string for "list all."
-    $search_text = isset($obj->search_text) ? $conn->real_escape_string($obj->search_text) : "";
-
-    // Corrected column name to 'category_name'
-    $sql = "SELECT * FROM category WHERE delete_at = 0 AND category_name LIKE '%$search_text%' ORDER BY id DESC";
-    $result = $conn->query($sql);
-
-    if (!$result) {
-        $output["head"]["code"] = 500;
-        $output["head"]["msg"] = "Database Error: " . $conn->error;
-    } else {
-        $output["head"]["code"] = 200;
-        $output["head"]["msg"] = "Success";
-        $output["body"]["categories"] = []; // Correct key: 'categories'
-     
-        if ($result->num_rows > 0) {
-            while ($row = $result->fetch_assoc()) {
-                $output["body"]["categories"][] = $row;
-            }
-        } else {
-            $output["head"]["msg"] = "No categories found";
-        }
+        $output["head"]["msg"]  = "Invalid category ID";
     }
 }
-// ===================== 3. CATCH-ALL: No recognizable parameter =====================
+
+// ==================================================================
+// Default: Invalid Request
+// ==================================================================
 else {
     $output["head"]["code"] = 400;
-    $output["head"]["msg"] = "Parameter is Mismatch or Operation not recognized.";
+    $output["head"]["msg"]  = "Invalid or missing parameters";
 }
 
-// ⚠️ FINAL FIX: Ensure ALL execution paths lead to echo json_encode($output);
-echo json_encode($output);
+// Return JSON response
+echo json_encode($output, JSON_NUMERIC_CHECK | JSON_UNESCAPED_UNICODE);
+$conn->close();
 ?>
