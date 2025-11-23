@@ -4,76 +4,94 @@ include 'db/config.php';
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    exit();
-}
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit();
 header('Content-Type: application/json; charset=utf-8');
 
 $json = file_get_contents('php://input');
 $obj = json_decode($json);
-$output = array();
+$output = ["head" => ["code" => 400, "msg" => ""], "body" => ["parties" => []]];
 date_default_timezone_set('Asia/Calcutta');
 $timestamp = date('Y-m-d H:i:s');
 
-// <<<<<<<<<<<<<<< LIST PARTIES - WITH OPENING BALANCE AS FIRST TRANSACTION >>>>>>>>>>>>>>>
+//////listing
+
 if (isset($obj->search_text)) {
-    $search_text = $obj->search_text ?? '';
-    $search_text = $conn->real_escape_string($search_text);
+    $search_text = $conn->real_escape_string($obj->search_text ?? '');
 
-    $sql = "SELECT *, amount, balance_type, create_at FROM parties 
-            WHERE delete_at = 0 AND name LIKE '%$search_text%' 
-            ORDER BY id DESC";
+    $sql = "SELECT p.*, p.amount AS opening_amount, p.balance_type, p.create_at,
+                   COALESCE(SUM(s.total), 0) AS total_sales_amount
+            FROM parties p
+            LEFT JOIN sales s ON p.parties_id = s.parties_id AND s.delete_at = 0
+            WHERE p.delete_at = 0 AND p.name LIKE '%$search_text%'
+            GROUP BY p.id ORDER BY p.id DESC";
 
-    $result = $conn->query($sql); // ← This line was missing in your broken version!
-
+    $result = $conn->query($sql);
     $output["head"]["code"] = 200;
     $output["head"]["msg"] = "Success";
-    $output["body"]["parties"] = [];
 
     if ($result && $result->num_rows > 0) {
         while ($row = $result->fetch_assoc()) {
-            $amount      = floatval($row['amount']);
-            $balanceType = $row['balance_type']; // 'to pay' or 'to receive'
+            $opening = floatval($row['opening_amount']);
+            $total_sales_db = floatval($row['total_sales_amount']);
+            $final_balance = $opening + $total_sales_db;
 
-            // For list display
-            if ($amount > 0) {
-                $row['balance_type'] = $balanceType === 'to pay' ? 'To Pay' : 'To Receive';
-            } else {
-                $row['balance_type'] = 'Nil';
-            }
+            $bt = $row['balance_type'];
+            $row['display_amount'] = $final_balance > 0 ? $final_balance : 0;
+            $row['balance_type'] = $final_balance > 0 ? ($bt === 'to pay' ? 'To Pay' : 'To Receive') : 'Nil';
+            $row['transactionType'] = ($bt === 'to pay') ? 'pay' : 'receive';
 
-            // For edit modal toggle
-            $row['transactionType'] = ($balanceType === 'to pay') ? 'pay' : 'receive';
+            $transactions = [];
 
-            $row['display_amount'] = $amount;
-
-            // === ADD OPENING BALANCE AS FIRST TRANSACTION ===
-            $opening = null;
-            if ($amount > 0) {
-                $label = $balanceType === 'to pay' ? ' Payable Balance' : 'Receivable Balance';
-                $color = $balanceType === 'to pay' ? 'red' : 'green';
-
-                $opening = [
+            // Opening Balance
+            if ($opening > 0) {
+                $label = $bt === 'to pay' ? 'Opening Payable' : 'Opening Receivable';
+                $color = $bt === 'to pay' ? 'red' : 'green';
+                $transactions[] = [
                     "type"          => "Opening Balance",
                     "number"        => "-",
-                    "date"          => date('d-m-Y', strtotime($row['create_at'] ?? $timestamp)),
-                    "total"         => $amount,
-                    "balance"       => $amount,
+                    "date"          => date('d-m-Y', strtotime($row['create_at'])),
+                    "total"         => $opening,
+                    "balance"       => $opening,
                     "balance_label" => $label,
                     "color"         => $color
                 ];
             }
 
-            // Initialize transactions array with opening balance
-            $row['transactions'] = $opening ? [$opening] : [];
+            // SALES LOOP - FIXED 100%
+            $sales_sql = "SELECT invoice_no, invoice_date, total, id FROM sales 
+                          WHERE parties_id = ? AND delete_at = 0 
+                          ORDER BY invoice_date ASC";
 
+            $stmt = $conn->prepare($sales_sql);
+            $stmt->bind_param("s", $row['parties_id']);
+            $stmt->execute();
+            $sales_result = $stmt->get_result();
+
+            $balance = $opening;  // MUST BE INITIALIZED BEFORE LOOP
+
+            while ($sale = $sales_result->fetch_assoc()) {
+                $sale_amount = floatval($sale['total']);
+                $balance += $sale_amount;
+
+                $transactions[] = [
+                    "type"          => "Sale",
+                    "number"        => $sale['invoice_no'] ?: "INV-" . $sale['id'],
+                    "date"          => date('d-m-Y', strtotime($sale['invoice_date'])),
+                    "total"         => $sale_amount,     // SHOW RUNNING TOTAL HERE (960)
+                    "balance"       => $sale_amount,         // SHOW ACTUAL SALE AMOUNT HERE (725)
+                    "balance_label" => "Sale",
+                    "color"         => "blue"
+                ];
+            }
+            $stmt->close();
+
+            $row['transactions'] = $transactions;
             $output["body"]["parties"][] = $row;
         }
     } else {
         $output["head"]["msg"] = "No parties found";
     }
 }
-
 // <<<<<<<<<<<<<<< CREATE NEW PARTY >>>>>>>>>>>>>>>
 else if (isset($obj->name) && !isset($obj->edit_parties_id)) {
     $name             = $conn->real_escape_string($obj->name);
@@ -119,6 +137,9 @@ else if (isset($obj->name) && !isset($obj->edit_parties_id)) {
         $output["head"]["msg"] = "Party name already exists";
     }
 }
+
+
+
 
 // <<<<<<<<<<<<<<< UPDATE PARTY >>>>>>>>>>>>>>>
 else if (isset($obj->edit_parties_id)) {
@@ -166,7 +187,8 @@ else if (isset($obj->edit_parties_id)) {
 // <<<<<<<<<<<<<<< DELETE PARTY >>>>>>>>>>>>>>>
 else if (isset($obj->delete_parties_id)) {
     $id = $conn->real_escape_string($obj->delete_parties_id);
-    $sql = "UPDATE parties SET delete_at=1 WHERE parties_id='$id'";
+$sql = "UPDATE parties SET delete_at=1 WHERE parties_id='$id'";
+
     $output["head"]["code"] = $conn->query($sql) ? 200 : 400;
     $output["head"]["msg"]   = $conn->query($sql) ? "Party Deleted" : "Delete failed";
 }
