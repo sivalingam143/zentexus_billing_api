@@ -30,6 +30,7 @@ if (isset($obj['type'], $obj['item_name'], $obj['category_id']) && !isset($obj['
     $unit_value = $conn->real_escape_string($obj['unit_value'] ?? '');
     $category_id = $conn->real_escape_string($obj['category_id']);
     $category_name = $conn->real_escape_string($obj['category_name'] ?? '');
+    $add_image = $conn->real_escape_string($obj['add_image'] ?? '');
     $sale_price = $conn->real_escape_string($obj['sale_price'] ?? '0');
     $purchase_price = $conn->real_escape_string($obj['purchase_price'] ?? '0');
     $stock = $conn->real_escape_string($obj['stock'] ?? '0');
@@ -41,11 +42,11 @@ if (isset($obj['type'], $obj['item_name'], $obj['category_id']) && !isset($obj['
     } else {
         $insert = "INSERT INTO product (
             type, item_name, hsn_code, unit_id, unit_value, 
-            category_id, category_name, sale_price, purchase_price, stock, 
+            category_id, category_name, add_image,sale_price, purchase_price, stock, 
             create_at, delete_at
         ) VALUES (
             '$type', '$item_name', $hsn_code, '$unit_id', '$unit_value',
-            '$category_id', '$category_name', '$sale_price', '$purchase_price', '$stock',
+            '$category_id', '$category_name','$add_image', '$sale_price', '$purchase_price', '$stock',
             '$timestamp', 0
         )";
 
@@ -87,6 +88,7 @@ else if (isset($obj['edit_item_code'])) {
     $unit_value = $conn->real_escape_string($obj['unit_value'] ?? '');
     $category_id = $conn->real_escape_string($obj['category_id'] ?? '');
     $category_name = $conn->real_escape_string($obj['category_name'] ?? '');
+     $add_image = $conn->real_escape_string($obj['add_image'] ?? '');
     $sale_price = $conn->real_escape_string($obj['sale_price'] ?? '0');
     $purchase_price = $conn->real_escape_string($obj['purchase_price'] ?? '0');
     $stock = $conn->real_escape_string($obj['stock'] ?? '0');
@@ -100,7 +102,7 @@ else if (isset($obj['edit_item_code'])) {
         $update = "UPDATE product SET 
             type = '$type', item_name = '$item_name', hsn_code = $hsn_code,
             unit_id = '$unit_id', unit_value = '$unit_value',
-            category_id = '$category_id', category_name = '$category_name',
+            category_id = '$category_id', category_name = '$category_name',add_image='$add_image',
             sale_price = '$sale_price', purchase_price = '$purchase_price', stock = '$stock'
             WHERE item_code = '$edit_item_code' AND delete_at = 0";
 
