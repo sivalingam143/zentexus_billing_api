@@ -58,14 +58,13 @@ else if (
     $unit_value     = $conn->real_escape_string($obj['unit_value'] ?? '');
     $category_id    = $conn->real_escape_string($obj['category_id'] ?? '');
     $category_name  = $conn->real_escape_string($obj['category_name'] ?? '');
-    $product_code = $conn->real_escape_string($obj['product_code'] ?? '');
-
+    $product_code   = $conn->real_escape_string($obj['product_code'] ?? '');
     $add_image      = $conn->real_escape_string($obj['add_image'] ?? '');
     $sale_price     = $conn->real_escape_string($obj['sale_price'] ?? '0');
     $purchase_price = $conn->real_escape_string($obj['purchase_price'] ?? '0');
     $stock          = $conn->real_escape_string($obj['stock'] ?? '0');
 
-    // Check duplicate product in same category
+    // Duplicate check
     $check = $conn->query("
         SELECT id FROM product 
         WHERE product_name = '$product_name' 
@@ -77,38 +76,44 @@ else if (
         $output["head"]["code"] = 400;
         $output["head"]["msg"]  = "Product name already exists in this category.";
     } else {
+
         $insert = "INSERT INTO product (
                         type, product_name, hsn_code, unit_id, unit_value,
-                        category_id, category_name, product_code,add_image,
+                        category_id, category_name, product_code, add_image,
                         sale_price, purchase_price, stock,
                         create_at, delete_at
                    ) VALUES (
                         '$type', '$product_name', $hsn_code,
                         '$unit_id', '$unit_value',
                         '$category_id', '$category_name',
-                        '$product_code', 
-                        '$add_image',
+                        '$product_code', '$add_image',
                         '$sale_price', '$purchase_price', '$stock',
                         '$timestamp', 0
                    )";
 
         if ($conn->query($insert)) {
+
             $new_id = $conn->insert_id;
 
-            // Generate product_id (same logic as category.php)
+            // Generate product_id
             $product_id = uniqueID('product', $new_id);
-
             $conn->query("UPDATE product SET product_id = '$product_id' WHERE id = '$new_id'");
+
+            // Fetch full inserted row
+            $res = $conn->query("SELECT * FROM product WHERE id = $new_id LIMIT 1");
+            $product_row = ($res && $res->num_rows > 0) ? $res->fetch_assoc() : null;
 
             $output["head"]["code"] = 200;
             $output["head"]["msg"]  = "Product created successfully";
-            $output["body"]["product_id"] = $product_id;
+            $output["body"]["product"] = $product_row;    // Full product data
+           
         } else {
             $output["head"]["code"] = 400;
             $output["head"]["msg"]  = "Failed to create product: " . $conn->error;
         }
     }
 }
+
 
 // ==================================================================
 // 3. Edit Existing Product

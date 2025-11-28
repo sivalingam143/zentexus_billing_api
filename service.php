@@ -92,22 +92,27 @@ else if (
                         '$sale_price',  '$tax',
                         '$timestamp', 0
                    )";
+if ($conn->query($insert)) {
+    $new_id = $conn->insert_id;
 
-        if ($conn->query($insert)) {
-            $new_id = $conn->insert_id;
+    // Generate service_id (same logic as category.php)
+    $service_id = uniqueID('service', $new_id);
 
-            // Generate product_id (same logic as category.php)
-            $service_id = uniqueID('service', $new_id);
+    $conn->query("UPDATE service SET service_id = '$service_id' WHERE id = '$new_id'");
 
-            $conn->query("UPDATE service SET service_id = '$service_id' WHERE id = '$new_id'");
+    // Fetch the newly inserted row
+    $res = $conn->query("SELECT * FROM service WHERE id = $new_id LIMIT 1");
+    $service_row = ($res && $res->num_rows > 0) ? $res->fetch_assoc() : null;
 
-            $output["head"]["code"] = 200;
-            $output["head"]["msg"]  = "service created successfully";
-            $output["body"]["service_id"] = $service_id;
-        } else {
-            $output["head"]["code"] = 400;
-            $output["head"]["msg"]  = "Failed to create service: " . $conn->error;
-        }
+    $output["head"]["code"] = 200;
+    $output["head"]["msg"]  = "service created successfully";
+    $output["body"]["service"] = $service_row;
+    $output["body"]["service_id"] = $service_id;
+} else {
+    $output["head"]["code"] = 400;
+    $output["head"]["msg"]  = "Failed to create service: " . $conn->error;
+}
+
     }
 }
 
@@ -118,7 +123,7 @@ else if (isset($obj['edit_service_id'])) {
     $edit_id        = $conn->real_escape_string($obj['edit_service_id']);
     $type           = $conn->real_escape_string($obj['type'] ?? '');
     $service_name   = $conn->real_escape_string($obj['service_name'] ?? '');
-    $service_hsn       = (int)($obj['service_hsn '] ?? 0);
+    $service_hsn       = (int)($obj['service_hsn'] ?? 0);
     $unit_id        = $conn->real_escape_string($obj['unit_id'] ?? '');
     $unit_value     = $conn->real_escape_string($obj['unit_value'] ?? '');
     $category_id    = $conn->real_escape_string($obj['category_id'] ?? '');
