@@ -43,13 +43,30 @@ else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
     $rount_off = isset($obj->rount_off) ? $obj->rount_off : 0;
     $round_off_amount = isset($obj->round_off_amount) ? $obj->round_off_amount : 0;
     $total = isset($obj->total) ? $obj->total : 0;
+    $received_amount = isset($obj->received_amount) ? floatval($obj->received_amount) : '';
     $payment_type = isset($obj->payment_type) ? $obj->payment_type : '';
     $description = isset($obj->description) ? $obj->description : '';
     $add_image = $conn->real_escape_string($obj->add_image ?? '');
     $documents = isset($obj->documents) ? $obj->documents : '[]';
+
+    // AUTO GENERATE INVOICE NUMBER
+    $year = date('Y');
+    $month = date('m');
+    $prefix = "INV{$year}{$month}-";   // Example: INV202511-
+
+    $sql = "SELECT invoice_no FROM sales WHERE invoice_no LIKE '$prefix%' ORDER BY id DESC LIMIT 1";
+    $result = $conn->query($sql);
+    if ($result->num_rows > 0) {
+        $last = $result->fetch_assoc()['invoice_no'];
+        $num = (int)substr($last, strlen($prefix)) + 1;
+    } else {
+        $num = 1;
+    }
+    $invoice_no = $prefix . str_pad($num, 4, '0', STR_PAD_LEFT); // INV202511-0001
+
     $unitCheck = $conn->query("SELECT `id` FROM `sales` WHERE `invoice_no`='$invoice_no' AND delete_at = 0");
     if ($unitCheck->num_rows == 0) {
-        $createUnit = "INSERT INTO `sales`(`sale_id`, `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `payment_type`,`description`,`add_image`,`documents`,`total`, `create_at`, `delete_at`) VALUES (NULL, '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$rount_off', '$round_off_amount', '$payment_type','$description','$add_image','$documents','$total', '$timestamp', '0')";
+        $createUnit = "INSERT INTO `sales`(`sale_id`, `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `payment_type`,`description`,`add_image`,`documents`,`total`,`received_amount`,`create_at`, `delete_at`) VALUES (NULL, '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$rount_off', '$round_off_amount', '$payment_type','$description','$add_image','$documents','$total','$received_amount', '$timestamp', '0')";
         if ($conn->query($createUnit)) {
             $id = $conn->insert_id;
             $enId = uniqueID('sale', $id);
@@ -57,6 +74,7 @@ else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
             $conn->query($updateUserId);
             $output["head"]["code"] = 200;
             $output["head"]["msg"] = "Successfully sale Created";
+            $output["body"]["invoice_no"] = $invoice_no;
         } else {
             $output["head"]["code"] = 400;
             $output["head"]["msg"] = "Failed to connect. Please try again.";
@@ -89,6 +107,7 @@ else if (isset($obj->edit_sales_id)) {
     $rount_off         = $obj->rount_off ?? 0;
     $round_off_amount  = $obj->round_off_amount ?? 0;
     $total            = $obj->total ?? 0;
+    $received_amount    = isset($obj->received_amount) ? floatval($obj->received_amount) : 0;
     $payment_type      = $conn->real_escape_string($obj->payment_type ?? '');
     $description       = $conn->real_escape_string($obj->description ?? '');
     $add_image         = $conn->real_escape_string($obj->add_image ?? '');
@@ -111,7 +130,8 @@ else if (isset($obj->edit_sales_id)) {
         `description`='$description',
         `add_image`='$add_image',
         `documents`='$documents',
-        `total`='$total' 
+        `total`='$total',
+        `received_amount`='$received_amount'
         WHERE `sale_id`='$edit_id'";  // ← THIS WAS BROKEN BEFORE
 
     if ($conn->query($updateUnit)) {
