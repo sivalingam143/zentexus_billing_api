@@ -13,6 +13,7 @@ $obj = json_decode($json);
 $output = ["head" => ["code" => 400, "msg" => ""], "body" => ["parties" => []]];
 date_default_timezone_set('Asia/Calcutta');
 $timestamp = date('Y-m-d H:i:s');
+
 if (isset($obj->search_text)) {
     $search_text = trim($obj->search_text);
     $like = "%$search_text%";
