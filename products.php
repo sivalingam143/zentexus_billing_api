@@ -121,7 +121,8 @@ else if (
 else if (isset($obj['edit_product_id'])) {
     $edit_id        = $conn->real_escape_string($obj['edit_product_id']);
     $type           = $conn->real_escape_string($obj['type'] ?? '');
-    $product_name   = $conn->real_escape_string($obj['product_name'] ?? '');
+    // $product_name   = $conn->real_escape_string($obj['product_name'] ?? '');
+    $product_name   = $obj['product_name'] ?? $conn->query("SELECT product_name FROM product WHERE product_id = '$edit_id' LIMIT 1")->fetch_assoc()['product_name'] ?? '';
     $hsn_code       = (int)($obj['hsn_code'] ?? 0);
     $unit_id        = $conn->real_escape_string($obj['unit_id'] ?? '');
     $unit_value     = $conn->real_escape_string($obj['unit_value'] ?? '');
@@ -131,7 +132,7 @@ else if (isset($obj['edit_product_id'])) {
     $add_image      = $conn->real_escape_string($obj['add_image'] ?? '');
     $sale_price     = $conn->real_escape_string($obj['sale_price'] ?? '0');
     $purchase_price = $conn->real_escape_string($obj['purchase_price'] ?? '0');
-    $stock          = $conn->real_escape_string($obj['stock'] ?? '0');
+   $stock          = $obj['stock'] ?? '{}';
 
     // prevent duplicate name except current record
     $check = $conn->query("
