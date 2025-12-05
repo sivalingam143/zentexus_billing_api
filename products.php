@@ -63,6 +63,9 @@ else if (
     $sale_price     = $conn->real_escape_string($obj['sale_price'] ?? '0');
     $purchase_price = $conn->real_escape_string($obj['purchase_price'] ?? '0');
     $stock          = $conn->real_escape_string($obj['stock'] ?? '0');
+  $status_code = 0;
+$status_name = 'active';
+
 
     // Duplicate check
     $check = $conn->query("
@@ -80,14 +83,14 @@ else if (
         $insert = "INSERT INTO product (
                         type, product_name, hsn_code, unit_id, unit_value,
                         category_id, category_name, product_code, add_image,
-                        sale_price, purchase_price, stock,
+                        sale_price, purchase_price, stock,status_code, status_name,
                         create_at, delete_at
                    ) VALUES (
                         '$type', '$product_name', $hsn_code,
                         '$unit_id', '$unit_value',
                         '$category_id', '$category_name',
                         '$product_code', '$add_image',
-                        '$sale_price', '$purchase_price', '$stock',
+                        '$sale_price', '$purchase_price', '$stock', '$status_code', '$status_name',
                         '$timestamp', 0
                    )";
 
@@ -118,78 +121,88 @@ else if (
 // ==================================================================
 // 3. Edit Existing Product
 // ==================================================================
-// ... (products.php existing code up to line 150)
-
-// ==================================================================
-// 3. Edit Existing Product
-// ==================================================================
 else if (isset($obj['edit_product_id'])) {
-    // NOTE: The frontend (MoveCategoryModal.jsx) sends the primary key 'id' as 'edit_product_id'
-    $edit_id        = $conn->real_escape_string($obj['edit_product_id']);
+    // We assume 'edit_product_id' contains the unique string product_id (e.g., PROD-0001)
+    $edit_id = $conn->real_escape_string($obj['edit_product_id']);
     
-    // Retrieve fields sent by the frontend (MoveCategoryModal.jsx only sends edit_product_id and category_id)
-    $category_id    = $conn->real_escape_string($obj['category_id'] ?? '');
+    // --- 1. Fetch Existing Data ---
+    $current_res = $conn->query("SELECT * FROM product WHERE product_id = '$edit_id' AND delete_at = 0 LIMIT 1");
 
-    // The frontend doesn't send these, so we need to fetch the existing values for mandatory fields 
-    // to avoid setting them to empty/zero, or we fetch the new category name.
-    $type           = $conn->real_escape_string($obj['type'] ?? $conn->query("SELECT type FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['type'] ?? '');
-    $product_name   = $conn->real_escape_string($obj['product_name'] ?? $conn->query("SELECT product_name FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['product_name'] ?? '');
-    $hsn_code       = (int)($obj['hsn_code'] ?? $conn->query("SELECT hsn_code FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['hsn_code'] ?? 0);
-    $unit_id        = $conn->real_escape_string($obj['unit_id'] ?? $conn->query("SELECT unit_id FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['unit_id'] ?? '');
-    $unit_value     = $conn->real_escape_string($obj['unit_value'] ?? $conn->query("SELECT unit_value FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['unit_value'] ?? '');
+    if (!$current_res || $current_res->num_rows === 0) {
+        $output["head"]["code"] = 404;
+        $output["head"]["msg"]  = "Product not found or already deleted.";
+        echo json_encode($output, JSON_NUMERIC_CHECK | JSON_UNESCAPED_UNICODE);
+        $conn->close();
+        exit;
+    }
+
+    $current = $current_res->fetch_assoc();
+    $primary_id = $current['id']; // Store the actual integer primary key (id) for final update query
+
+    // --- 2. Determine New Values (New Data overwrites Old Data) ---
+    // Use data from $obj if set, otherwise use current data
+    $type           = $conn->real_escape_string($obj['type'] ?? $current['type']);
+    $product_name   = $conn->real_escape_string($obj['product_name'] ?? $current['product_name']);
+    $hsn_code       = (int)($obj['hsn_code'] ?? $current['hsn_code'] ?? 0);
+    $unit_id        = $conn->real_escape_string($obj['unit_id'] ?? $current['unit_id']);
+    $unit_value     = $conn->real_escape_string($obj['unit_value'] ?? $current['unit_value']);
+    $product_code   = $conn->real_escape_string($obj['product_code'] ?? $current['product_code']);
+    $add_image      = $conn->real_escape_string($obj['add_image'] ?? $current['add_image']);
+    $sale_price     = $conn->real_escape_string($obj['sale_price'] ?? $current['sale_price']);
+    $purchase_price = $conn->real_escape_string($obj['purchase_price'] ?? $current['purchase_price']);
     
-    // Fetch the current category_id for duplicate check later if the frontend didn't send a new one
-    $current_category_id = $conn->query("SELECT category_id FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['category_id'] ?? '';
+    // Status update logic
+    $status_code = isset($obj['status_code']) ? (int)$obj['status_code'] : (int)($current['status_code'] ?? 0);
+    $status_name = ($status_code == 1) ? 'inactive' : 'active';
+    
+    // Handle Stock - Ensure it's treated as a string for DB storage
+   $stock          = $obj['stock'] ?? '{}';
+    // --- 3. Category Update Logic ---
+    $category_id    = $conn->real_escape_string($obj['category_id'] ?? $current['category_id']);
+    $category_name  = $current['category_name']; // Default to current name
 
-    $category_name  = ''; // Initialize category_name
-
-    // 1. If a new category_id is provided, fetch the corresponding category_name from the 'category' table
-    if (!empty($category_id)) {
+    // If a new category_id is provided, fetch the corresponding category_name from the 'category' table
+    if (isset($obj['category_id'])) {
         $res = $conn->query("SELECT category_name FROM category WHERE category_id = '$category_id' AND delete_at = 0 LIMIT 1");
         if ($res && $res->num_rows > 0) {
             $category_name = $res->fetch_assoc()['category_name'];
         }
     }
-    // 2. If no new category_id is provided, fetch the existing category_name
-    else {
-         $category_name = $conn->real_escape_string($obj['category_name'] ?? $conn->query("SELECT category_name FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['category_name'] ?? '');
-         $category_id = $current_category_id; // Use existing category ID
+    // If category_name is explicitly passed, use it (might be used when category_id is unchanged)
+    else if (isset($obj['category_name'])) {
+         $category_name = $conn->real_escape_string($obj['category_name']);
     }
 
-    $product_code  = $conn->real_escape_string($obj['product_code'] ?? $conn->query("SELECT product_code FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['product_code'] ?? '');
-    $add_image      = $conn->real_escape_string($obj['add_image'] ?? $conn->query("SELECT add_image FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['add_image'] ?? '');
-    $sale_price     = $conn->real_escape_string($obj['sale_price'] ?? $conn->query("SELECT sale_price FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['sale_price'] ?? '0');
-    $purchase_price = $conn->real_escape_string($obj['purchase_price'] ?? $conn->query("SELECT purchase_price FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['purchase_price'] ?? '0');
-    $stock          = $obj['stock'] ?? $conn->query("SELECT stock FROM product WHERE id = '$edit_id' LIMIT 1")->fetch_assoc()['stock'] ?? '{}';
-
-
-    // prevent duplicate name except current record
+    // --- 4. Duplicate Check ---
     $check = $conn->query("
         SELECT id FROM product
         WHERE product_name = '$product_name'
           AND category_id = '$category_id'
-          AND id != '$edit_id' /* <-- **FIXED: Must check against primary key 'id'** */
+          AND id != '$primary_id' 
           AND delete_at = 0
     ");
 
     if ($check->num_rows > 0) {
         $output["head"]["code"] = 400;
-        $output["head"]["msg"]  = "Another product with this name already exists.";
+        $output["head"]["msg"]  = "Another product with this name already exists in this category.";
     } else {
+        // --- 5. Perform Update ---
         $update = "UPDATE product SET
                         type = '$type',
                         product_name = '$product_name',
                         hsn_code = $hsn_code,
                         unit_id = '$unit_id',
                         unit_value = '$unit_value',
-                        category_id = '$category_id', /* <-- New category ID */
-                        category_name = '$category_name', /* <-- New category Name (fetched above) */
-                       product_code = '$product_code',
+                        category_id = '$category_id',
+                        category_name = '$category_name',
+                        product_code = '$product_code',
                         add_image = '$add_image',
                         sale_price = '$sale_price',
                         purchase_price = '$purchase_price',
-                        stock = '$stock'
-                   WHERE id = '$edit_id' /* <-- **FIXED: Use primary key 'id'** */
+                        stock = '$stock',
+                        status_code = '$status_code',
+                        status_name = '$status_name'
+                   WHERE id = '$primary_id'
                      AND delete_at = 0";
 
         if ($conn->query($update)) {
@@ -201,7 +214,6 @@ else if (isset($obj['edit_product_id'])) {
         }
     }
 }
-// ... (products.php remaining code)
 
 // ==================================================================
 // 4. Delete Product (Soft Delete)
@@ -220,6 +232,41 @@ else if (isset($obj['delete_product_id'])) {
     } else {
         $output["head"]["code"] = 400;
         $output["head"]["msg"]  = "Invalid product ID";
+    }
+}
+
+
+// ==================================================================
+// 3B. BULK STATUS UPDATE (ACTIVE / INACTIVE)
+// ==================================================================
+else if (isset($obj['bulk_status_update']) && isset($obj['product_ids'])) {
+    $ids = $obj['product_ids'];
+    
+    // status_code is ENUM('0','1') → treat as string
+    $status_code = ($obj['status_code'] === '1' || $obj['status_code'] == 1) ? '1' : '0';
+    $status_name = ($status_code === '1') ? 'inactive' : 'active';
+
+    if (!is_array($ids) || empty($ids)) {
+        $output["head"]["code"] = 400;
+        $output["head"]["msg"]  = "No products selected.";
+    } else {
+        // Build IN clause safely
+        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+        $stmt = $conn->prepare("UPDATE product SET status_code = ?, status_name = ? WHERE product_id IN ($placeholders) AND delete_at = 0");
+        
+        // First two params: string for ENUM, string for status_name
+        $types = 'ss' . str_repeat('s', count($ids));
+        $params = array_merge([$status_code, $status_name], $ids);
+        $stmt->bind_param($types, ...$params);
+
+        if ($stmt->execute()) {
+            $output["head"]["code"] = 200;
+            $output["head"]["msg"]  = "Updated {$stmt->affected_rows} items";
+        } else {
+            $output["head"]["code"] = 400;
+            $output["head"]["msg"]  = "Update failed: " . $stmt->error;
+        }
+        $stmt->close();
     }
 }
 
