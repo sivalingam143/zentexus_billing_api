@@ -235,41 +235,88 @@ else if (isset($obj['delete_product_id'])) {
     }
 }
 
-
 // ==================================================================
-// 3B. BULK STATUS UPDATE (ACTIVE / INACTIVE)
+// BULK STATUS UPDATE + BULK ASSIGN CODE (ONE BLOCK - BOTH LOGICS)
 // ==================================================================
-else if (isset($obj['bulk_status_update']) && isset($obj['product_ids'])) {
-    $ids = $obj['product_ids'];
-    
-    // status_code is ENUM('0','1') → treat as string
-    $status_code = ($obj['status_code'] === '1' || $obj['status_code'] == 1) ? '1' : '0';
-    $status_name = ($status_code === '1') ? 'inactive' : 'active';
+else if (isset($obj['bulk_status_update']) || isset($obj['bulk_assign_code']) || isset($obj['bulk_assign_units']))  {
+    $ids = $obj['product_ids'] ?? [];
 
     if (!is_array($ids) || empty($ids)) {
         $output["head"]["code"] = 400;
         $output["head"]["msg"]  = "No products selected.";
     } else {
-        // Build IN clause safely
-        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
-        $stmt = $conn->prepare("UPDATE product SET status_code = ?, status_name = ? WHERE product_id IN ($placeholders) AND delete_at = 0");
-        
-        // First two params: string for ENUM, string for status_name
-        $types = 'ss' . str_repeat('s', count($ids));
-        $params = array_merge([$status_code, $status_name], $ids);
-        $stmt->bind_param($types, ...$params);
+        $updated = 0;
 
-        if ($stmt->execute()) {
-            $output["head"]["code"] = 200;
-            $output["head"]["msg"]  = "Updated {$stmt->affected_rows} items";
-        } else {
-            $output["head"]["code"] = 400;
-            $output["head"]["msg"]  = "Update failed: " . $stmt->error;
+        // CASE 1: Bulk Assign Code
+       // CASE 1: Bulk Assign Code
+if (isset($obj['bulk_assign_code'])) {
+    $stmt = $conn->prepare("UPDATE product SET product_code = ? WHERE product_id = ? AND (product_code IS NULL OR product_code = '') AND delete_at = 0");
+
+    foreach ($ids as $pid) {
+        $pid = $conn->real_escape_string($pid);
+
+        // EXACT SAME as your "Assign Code" button → pure timestamp in milliseconds
+        $newCode = (string)(microtime(true) * 1000); // removes rounding error  // e.g. 1736001234567
+
+        $stmt->bind_param("ss", $newCode, $pid);
+        if ($stmt->execute() && $stmt->affected_rows > 0) {
+            $updated++;
         }
-        $stmt->close();
     }
+    $stmt->close();
+
+    $output["head"]["code"] = 200;
+    $output["head"]["msg"]  = "Assigned codes to $updated items";
 }
 
+        // CASE 2: Bulk Status Update (unchanged)
+        else if (isset($obj['bulk_status_update'])) {
+            $status_code = ($obj['status_code'] == 1) ? '1' : '0';
+            $status_name = ($status_code === '1') ? 'inactive' : 'active';
+
+            $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+            $stmt = $conn->prepare("UPDATE product SET status_code = ?, status_name = ? WHERE product_id IN ($placeholders) AND delete_at = 0");
+
+            $types = 'ss' . str_repeat('s', count($ids));
+            $params = array_merge([$status_code, $status_name], $ids);
+            $stmt->bind_param($types, ...$params);
+
+            if ($stmt->execute()) {
+                $updated = $stmt->affected_rows;
+            }
+            $stmt->close();
+
+            $output["head"]["code"] = 200;
+            $output["head"]["msg"]  = "Updated $updated items to $status_name";
+        }
+        // Inside the big else if (isset($obj['bulk_status_update']) || isset($obj['bulk_assign_code'])) { ... }
+
+else if (isset($obj['bulk_assign_units'])) {
+    $unit_value = $conn->real_escape_string($obj['unit_value'] ?? '');
+    $unit_id    = $conn->real_escape_string($obj['unit_id'] ?? '');
+    $ids        = $obj['product_ids'] ?? [];
+
+    if (!is_array($ids) || empty($ids)) {
+        $output["head"]["code"] = 400;
+        $output["head"]["msg"]  = "No products selected";
+    } else {
+        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+        $stmt = $conn->prepare("UPDATE product SET unit_value = ?, unit_id = ? WHERE product_id IN ($placeholders) AND delete_at = 0");
+
+        $types = 'ss' . str_repeat('s', count($ids));
+        $params = array_merge([$unit_value, $unit_id], $ids);
+
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $updated = $stmt->affected_rows;
+        $stmt->close();
+
+        $output["head"]["code"] = 200;
+        $output["head"]["msg"]  = "Units assigned to $updated items";
+    }
+}
+    }
+}
 // ==================================================================
 // Default: Invalid
 // ==================================================================
