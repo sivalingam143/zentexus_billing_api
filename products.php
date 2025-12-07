@@ -234,11 +234,10 @@ else if (isset($obj['delete_product_id'])) {
         $output["head"]["msg"]  = "Invalid product ID";
     }
 }
-
 // ==================================================================
-// BULK STATUS UPDATE + BULK ASSIGN CODE (ONE BLOCK - BOTH LOGICS)
+// 5. BULK ASSIGN CODE (must be first, as it's the simplest check)
 // ==================================================================
-else if (isset($obj['bulk_status_update']) || isset($obj['bulk_assign_code']) || isset($obj['bulk_assign_units']))  {
+else if (isset($obj['bulk_assign_code'])) {
     $ids = $obj['product_ids'] ?? [];
 
     if (!is_array($ids) || empty($ids)) {
@@ -246,60 +245,69 @@ else if (isset($obj['bulk_status_update']) || isset($obj['bulk_assign_code']) ||
         $output["head"]["msg"]  = "No products selected.";
     } else {
         $updated = 0;
+        $stmt = $conn->prepare("UPDATE product SET product_code = ? WHERE product_id = ? AND (product_code IS NULL OR product_code = '') AND delete_at = 0");
 
-        // CASE 1: Bulk Assign Code
-       // CASE 1: Bulk Assign Code
-if (isset($obj['bulk_assign_code'])) {
-    $stmt = $conn->prepare("UPDATE product SET product_code = ? WHERE product_id = ? AND (product_code IS NULL OR product_code = '') AND delete_at = 0");
+        foreach ($ids as $pid) {
+            $pid = $conn->real_escape_string($pid);
+            $newCode = (string)(microtime(true) * 1000); 
 
-    foreach ($ids as $pid) {
-        $pid = $conn->real_escape_string($pid);
-
-        // EXACT SAME as your "Assign Code" button → pure timestamp in milliseconds
-        $newCode = (string)(microtime(true) * 1000); // removes rounding error  // e.g. 1736001234567
-
-        $stmt->bind_param("ss", $newCode, $pid);
-        if ($stmt->execute() && $stmt->affected_rows > 0) {
-            $updated++;
+            $stmt->bind_param("ss", $newCode, $pid);
+            if ($stmt->execute() && $stmt->affected_rows > 0) {
+                $updated++;
+            }
         }
-    }
-    $stmt->close();
+        $stmt->close();
 
-    $output["head"]["code"] = 200;
-    $output["head"]["msg"]  = "Assigned codes to $updated items";
+        $output["head"]["code"] = 200;
+        $output["head"]["msg"]  = "Assigned codes to $updated items";
+    }
 }
 
-        // CASE 2: Bulk Status Update (unchanged)
-        else if (isset($obj['bulk_status_update'])) {
-            $status_code = ($obj['status_code'] == 1) ? '1' : '0';
-            $status_name = ($status_code === '1') ? 'inactive' : 'active';
+// ==================================================================
+// 6. BULK STATUS UPDATE
+// ==================================================================
+else if (isset($obj['bulk_status_update'])) {
+    $ids = $obj['product_ids'] ?? [];
 
-            $placeholders = str_repeat('?,', count($ids) - 1) . '?';
-            $stmt = $conn->prepare("UPDATE product SET status_code = ?, status_name = ? WHERE product_id IN ($placeholders) AND delete_at = 0");
+    if (!is_array($ids) || empty($ids)) {
+        $output["head"]["code"] = 400;
+        $output["head"]["msg"]  = "No products selected.";
+    } else {
+        $status_code = ($obj['status_code'] == 1) ? '1' : '0';
+        $status_name = ($status_code === '1') ? 'inactive' : 'active';
+        $updated = 0;
 
-            $types = 'ss' . str_repeat('s', count($ids));
-            $params = array_merge([$status_code, $status_name], $ids);
-            $stmt->bind_param($types, ...$params);
+        $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+        $stmt = $conn->prepare("UPDATE product SET status_code = ?, status_name = ? WHERE product_id IN ($placeholders) AND delete_at = 0");
 
-            if ($stmt->execute()) {
-                $updated = $stmt->affected_rows;
-            }
-            $stmt->close();
+        $types = 'ss' . str_repeat('s', count($ids));
+        $params = array_merge([$status_code, $status_name], $ids);
+        $stmt->bind_param($types, ...$params);
 
-            $output["head"]["code"] = 200;
-            $output["head"]["msg"]  = "Updated $updated items to $status_name";
+        if ($stmt->execute()) {
+            $updated = $stmt->affected_rows;
         }
-        // Inside the big else if (isset($obj['bulk_status_update']) || isset($obj['bulk_assign_code'])) { ... }
+        $stmt->close();
 
+        $output["head"]["code"] = 200;
+        $output["head"]["msg"]  = "Updated $updated items to $status_name";
+    }
+}
+
+// ==================================================================
+// 7. BULK ASSIGN UNITS
+// ==================================================================
 else if (isset($obj['bulk_assign_units'])) {
-    $unit_value = $conn->real_escape_string($obj['unit_value'] ?? '');
-    $unit_id    = $conn->real_escape_string($obj['unit_id'] ?? '');
-    $ids        = $obj['product_ids'] ?? [];
+    $ids = $obj['product_ids'] ?? [];
 
     if (!is_array($ids) || empty($ids)) {
         $output["head"]["code"] = 400;
         $output["head"]["msg"]  = "No products selected";
     } else {
+        $unit_value = $conn->real_escape_string($obj['unit_value'] ?? '');
+        $unit_id    = $conn->real_escape_string($obj['unit_id'] ?? '');
+        $updated = 0;
+
         $placeholders = str_repeat('?,', count($ids) - 1) . '?';
         $stmt = $conn->prepare("UPDATE product SET unit_value = ?, unit_id = ? WHERE product_id IN ($placeholders) AND delete_at = 0");
 
@@ -315,8 +323,110 @@ else if (isset($obj['bulk_assign_units'])) {
         $output["head"]["msg"]  = "Units assigned to $updated items";
     }
 }
+
+// ==================================================================
+// BULK UPDATE ITEMS
+// ==================================================================
+else if (isset($obj['bulk_update_items'])) {
+    $ids = $obj['product_ids'] ?? [];
+
+    if (!is_array($ids) || empty($ids)) {
+        $output["head"]["code"] = 400;
+        $output["head"]["msg"]  = "No products selected";
+    } else {
+        // Fix for PHP Deprecated: Changed '?? null' to '?? '' (empty string)'
+        $category_id      = $conn->real_escape_string($obj['category_id'] ?? '');
+        $product_code     = $conn->real_escape_string($obj['product_code'] ?? '');
+        $tax_type         = $conn->real_escape_string($obj['tax_type'] ?? '');
+        $tax_rate         = $conn->real_escape_string($obj['tax_rate'] ?? ''); // FIX: tax_rate is now sanitized as a string
+        $discount_type    = $conn->real_escape_string($obj['discount_type'] ?? '');
+        $discount_value   = $conn->real_escape_string($obj['discount_value'] ?? '');
+        $sale_price       = $conn->real_escape_string($obj['sale_price'] ?? '');
+        $purchase_price   = $conn->real_escape_string($obj['purchase_price'] ?? '');
+
+        $updates = [];
+        $types   = '';
+        $params  = [];
+        
+        // =================================================================
+        // FIX 1: Add Category Name Lookup and Update
+        // =================================================================
+        if (array_key_exists('category_id', $obj)) {
+            $updates[] = "category_id = ?"; $types .= 's'; $params[] = $category_id;
+            
+            // Look up category_name for consistency
+            $category_name_to_update = '';
+            if (!empty($category_id)) {
+                $res = $conn->query("SELECT category_name FROM category WHERE category_id = '$category_id' AND delete_at = 0 LIMIT 1");
+                if ($res && $res->num_rows > 0) {
+                    $category_name_to_update = $conn->real_escape_string($res->fetch_assoc()['category_name']);
+                }
+            }
+            // Add category_name to the update list
+            $updates[] = "category_name = ?"; $types .= 's'; $params[] = $category_name_to_update;
+        }
+        
+        // =================================================================
+        // FIX 2: Ensure tax_rate/tax_type are updated if present
+        // =================================================================
+        if (array_key_exists('product_code', $obj)) {
+            $updates[] = "product_code = ?"; $types .= 's'; $params[] = $product_code;
+        }
+        if (array_key_exists('tax_type', $obj)) {
+            $updates[] = "tax_type = ?"; $types .= 's'; $params[] = $tax_type;
+        }
+        // Use array_key_exists for tax_rate to allow saving an empty string or 'None'
+        if (array_key_exists('tax_rate', $obj)) { 
+            $updates[] = "tax_rate = ?"; $types .= 's'; $params[] = $tax_rate;
+        }
+        if (array_key_exists('discount_type', $obj)) {
+            $updates[] = "discount_type = ?"; $types .= 's'; $params[] = $discount_type;
+        }
+        if (array_key_exists('discount_value', $obj)) { 
+            $updates[] = "discount_value = ?"; $types .= 's'; $params[] = $discount_value;
+        }
+        if (array_key_exists('sale_price', $obj)) {
+            $updates[] = "sale_price = ?"; $types .= 's'; $params[] = $sale_price;
+        }
+        if (array_key_exists('purchase_price', $obj)) {
+            $updates[] = "purchase_price = ?"; $types .= 's'; $params[] = $purchase_price;
+        }
+        if (isset($obj['hsn_code'])) {
+            $hsn_code_int = (int)$obj['hsn_code']; 
+            $updates[] = "hsn_code = ?"; $types .= 'i'; $params[] = $hsn_code_int;
+        }
+
+   
+
+        if (empty($updates)) {
+            $output["head"]["code"] = 400;
+            $output["head"]["msg"]  = "No update fields provided";
+        } else {
+            $set_clause = implode(', ', $updates);
+            $placeholders = str_repeat('?,', count($ids) - 1) . '?';
+
+            $sql = "UPDATE product SET $set_clause WHERE product_id IN ($placeholders) AND delete_at = 0";
+            
+            $stmt = $conn->prepare($sql);
+
+            $types .= str_repeat('s', count($ids));
+            $params = array_merge($params, $ids);
+            
+            $stmt->bind_param($types, ...$params);
+            
+            if ($stmt->execute()) {
+                $updated = $stmt->affected_rows;
+                $output["head"]["code"] = 200;
+                $output["head"]["msg"]  = "Updated $updated items with the selected fields";
+            } else {
+                $output["head"]["code"] = 500;
+                $output["head"]["msg"]  = "Database Error: " . $conn->error;
+            }
+            $stmt->close();
+        }
     }
 }
+
 // ==================================================================
 // Default: Invalid
 // ==================================================================
