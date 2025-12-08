@@ -61,7 +61,8 @@ else if (isset($obj->name) && !isset($obj->edit_parties_id)) {
     $gstin_type_name  = $obj->gstin_type_name ?? '';
     $additional_field = $obj->additional_field ?? '';
 
-    $transaction_type = ($obj->transactionType === 'pay') ? 'to pay' : 'to receive';
+    // $transaction_type = ($obj->transactionType === 'pay') ? 'to pay' : 'to receive';
+    $transaction_type = ($obj->transactionType === 'to pay') ? 'to pay' : 'to receive';
 
     $check = $conn->query("SELECT id FROM parties WHERE name='$name' AND delete_at = 0");
     if ($check->num_rows == 0) {
@@ -110,9 +111,12 @@ else if (isset($obj->edit_parties_id)) {
     $additional_field = $obj->additional_field ?? '';
 
     // FIXED: Works whether frontend sends "pay" or "to pay"
+    // $transaction_type = (isset($obj->transactionType) && 
+    //     ($obj->transactionType === 'pay' || $obj->transactionType === 'to pay')) 
+    //     ? 'to pay' : 'to receive';
     $transaction_type = (isset($obj->transactionType) && 
-        ($obj->transactionType === 'pay' || $obj->transactionType === 'to pay')) 
-        ? 'to pay' : 'to receive';
+    ($obj->transactionType === 'to pay')) 
+    ? 'to pay' : 'to receive';
 
     $sql = "UPDATE parties SET
                 name='$name',
