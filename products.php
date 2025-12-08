@@ -364,6 +364,13 @@
                         $types .= 'i'; 
                         $params[] = $hsn;
                     }
+                    // ADD THIS FOR ITEM CODE (product_code)
+if (array_key_exists('product_code', $obj)) {
+    $pcode = $conn->real_escape_string($obj['product_code']);
+    $updates[] = "product_code = ?";
+    $types .= 's';
+    $params[] = $pcode;
+}
 
                     if (array_key_exists('sale_price', $obj)) {
                         $sale_json = trim($obj['sale_price']);
