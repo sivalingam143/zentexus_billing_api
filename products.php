@@ -382,7 +382,23 @@ if ($purchase_json === '') $purchase_json = '{}';
                         $types .= 's'; 
                         $params[] = $purchase_json;
                     }
-                    
+                                       if (array_key_exists('stock', $obj)) {
+                        $stock_val = $obj['stock'];
+
+                        if (is_array($stock_val) || is_object($stock_val)) {
+                            $stock_json = json_encode($stock_val, JSON_UNESCAPED_UNICODE);
+                        } else {
+                            $stock_json = trim((string)$stock_val);
+                        }
+
+                        if (!$stock_json || $stock_json === 'null') {
+                            $stock_json = '{}';
+                        }
+
+                        $updates[] = "stock = ?";
+                        $types .= 's';
+                        $params[] = $stock_json;
+                    }
 
                     if (empty($updates)) {
                         $output["head"]["code"] = 400;
