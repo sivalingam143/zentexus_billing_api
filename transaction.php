@@ -21,7 +21,7 @@ date_default_timezone_set('Asia/Calcutta');
 $timestamp = date('Y-m-d H:i:s');
 
 
-/ Function to calculate the running balance (Crucial for accurate party ledger)
+// Function to calculate the running balance (Crucial for accurate party ledger)
 function calculate_running_balance($transactions) {
     // 1. Sort by date, then by 'created_at' for transactions on the same day
     usort($transactions, function($a, $b) {
