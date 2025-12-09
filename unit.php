@@ -17,34 +17,37 @@ $output = array();
 date_default_timezone_set('Asia/Calcutta');
 $timestamp = date('Y-m-d H:i:s');
 
-// ==================================================================
-// 1. Save Unit Conversion (New Endpoint)
-// ==================================================================
+// SAVE CONVERSION – APPEND TO ARRAY
 if (isset($obj['save_conversion_unit_id']) && isset($obj['conversion_text'])) {
     $unit_id = $conn->real_escape_string($obj['save_conversion_unit_id']);
-    $conversion_text = $conn->real_escape_string($obj['conversion_text']);
+    $new_text = $conn->real_escape_string($obj['conversion_text']);
 
-    // Check if unit exists
-    $existCheck = $conn->query("SELECT id FROM unit WHERE unit_id = '$unit_id' AND delete_at = 0");
-    if ($existCheck->num_rows == 0) {
-        $output["head"]["code"] = 404;
-        $output["head"]["msg"]  = "Unit not found";
-    } else {
-        // Update the conversion text for the unit
-        $update = "UPDATE unit SET 
-                        conversion = '$conversion_text'
-                   WHERE unit_id = '$unit_id' AND delete_at = 0";
+    // Get current conversions (stored as JSON string)
+    $result = $conn->query("SELECT conversion FROM unit WHERE unit_id = '$unit_id' AND delete_at = 0");
+    $row = $result->fetch_assoc();
 
-        if ($conn->query($update)) {
-            $output["head"]["code"] = 200;
-            $output["head"]["msg"]  = "Unit conversion saved successfully";
-        } else {
-            $output["head"]["code"] = 500;
-            $output["head"]["msg"]  = "Failed to save unit conversion: " . $conn->error;
-        }
+    $conversions = [];
+    if ($row['conversion'] && $row['conversion'] !== '') {
+        $conversions = json_decode($row['conversion'], true);
+        if (!is_array($conversions)) $conversions = [];
     }
-}
 
+    // Add new conversion
+    $conversions[] = $new_text;
+    $json = json_encode($conversions, JSON_UNESCAPED_UNICODE);
+
+    $update = $conn->query("UPDATE unit SET conversion = '$json' WHERE unit_id = '$unit_id'");
+
+    if ($update) {
+        $output["head"]["code"] = 200;
+        $output["head"]["msg"]  = "Conversion added successfully";
+    } else {
+        $output["head"]["code"] = 500;
+        $output["head"]["msg"]  = "Failed: " . $conn->error;
+    }
+    echo json_encode($output);
+    exit;
+}
 // ==================================================================
 // 2. Search / List Units (Updated to include 'conversion' column)
 // ==================================================================
