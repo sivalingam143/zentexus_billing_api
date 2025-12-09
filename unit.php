@@ -18,11 +18,41 @@ date_default_timezone_set('Asia/Calcutta');
 $timestamp = date('Y-m-d H:i:s');
 
 // ==================================================================
-// 1. Search / List Units
+// 1. Save Unit Conversion (New Endpoint)
 // ==================================================================
-if (isset($obj['search_text'])) {
+if (isset($obj['save_conversion_unit_id']) && isset($obj['conversion_text'])) {
+    $unit_id = $conn->real_escape_string($obj['save_conversion_unit_id']);
+    $conversion_text = $conn->real_escape_string($obj['conversion_text']);
+
+    // Check if unit exists
+    $existCheck = $conn->query("SELECT id FROM unit WHERE unit_id = '$unit_id' AND delete_at = 0");
+    if ($existCheck->num_rows == 0) {
+        $output["head"]["code"] = 404;
+        $output["head"]["msg"]  = "Unit not found";
+    } else {
+        // Update the conversion text for the unit
+        $update = "UPDATE unit SET 
+                        conversion = '$conversion_text'
+                   WHERE unit_id = '$unit_id' AND delete_at = 0";
+
+        if ($conn->query($update)) {
+            $output["head"]["code"] = 200;
+            $output["head"]["msg"]  = "Unit conversion saved successfully";
+        } else {
+            $output["head"]["code"] = 500;
+            $output["head"]["msg"]  = "Failed to save unit conversion: " . $conn->error;
+        }
+    }
+}
+
+// ==================================================================
+// 2. Search / List Units (Updated to include 'conversion' column)
+// ==================================================================
+else if (isset($obj['search_text'])) {
     $search_text = $conn->real_escape_string($obj['search_text']);
-    $sql = "SELECT * FROM unit 
+    // Select the new 'conversion' column
+    $sql = "SELECT id, unit_id, unit_name, short_name, create_at, conversion
+            FROM unit 
             WHERE delete_at = 0 
               AND unit_name LIKE '%$search_text%' 
             ORDER BY id DESC";
@@ -43,12 +73,13 @@ if (isset($obj['search_text'])) {
 }
 
 // ==================================================================
-// 2. DELETE Unit (Soft Delete) - Comes first to avoid conflicts
+// 3. DELETE Unit (Soft Delete)
 // ==================================================================
 else if (isset($obj['delete_unit_id'])) {
     $delete_id = $conn->real_escape_string($obj['delete_unit_id']);
 
     if (!empty($delete_id)) {
+        // NOTE: The frontend logic ensures no mapped unit is deleted.
         $delete = "UPDATE unit SET delete_at = 1 WHERE unit_id = '$delete_id' AND delete_at = 0";
         if ($conn->query($delete) && $conn->affected_rows > 0) {
             $output["head"]["code"] = 200;
@@ -64,12 +95,14 @@ else if (isset($obj['delete_unit_id'])) {
 }
 
 // ==================================================================
-// 3. EDIT Existing Unit - Must come BEFORE create!
+// 4. EDIT Existing Unit (Updated to allow updating 'conversion' column)
 // ==================================================================
 else if (isset($obj['edit_unit_id']) && isset($obj['unit_name'])) {
     $edit_id     = $conn->real_escape_string($obj['edit_unit_id']);
     $unit_name   = $conn->real_escape_string($obj['unit_name']);
     $short_name  = isset($obj['short_name']) ? $conn->real_escape_string($obj['short_name']) : '';
+    // Optional: Allow conversion text to be updated via edit, though we have a dedicated save endpoint now
+    $conversion  = isset($obj['conversion']) ? $conn->real_escape_string($obj['conversion']) : NULL;
 
     // Check if unit exists
     $existCheck = $conn->query("SELECT id FROM unit WHERE unit_id = '$edit_id' AND delete_at = 0");
@@ -89,9 +122,10 @@ else if (isset($obj['edit_unit_id']) && isset($obj['unit_name'])) {
         } else {
             $update = "UPDATE unit SET 
                             unit_name   = '$unit_name',
-                            short_name  = '$short_name'
-                           
-                       WHERE unit_id = '$edit_id' AND delete_at = 0";
+                            short_name  = '$short_name'" .
+                            // Only update conversion if it was explicitly passed
+                            ($conversion !== NULL ? ", conversion = '$conversion'" : "") .
+                       " WHERE unit_id = '$edit_id' AND delete_at = 0";
 
             if ($conn->query($update) && $conn->affected_rows > 0) {
                 $output["head"]["code"] = 200;
@@ -105,11 +139,13 @@ else if (isset($obj['edit_unit_id']) && isset($obj['unit_name'])) {
 }
 
 // ==================================================================
-// 4. CREATE New Unit
+// 5. CREATE New Unit (Updated to include 'conversion' column)
 // ==================================================================
 else if (isset($obj['unit_name']) && empty($obj['edit_unit_id'] ?? '')) {
     $unit_name  = $conn->real_escape_string($obj['unit_name']);
     $short_name = isset($obj['short_name']) ? $conn->real_escape_string($obj['short_name']) : '';
+    // New units start with an empty conversion string
+    $conversion = ''; 
 
     if (empty(trim($unit_name))) {
         $output["head"]["code"] = 400;
@@ -121,8 +157,9 @@ else if (isset($obj['unit_name']) && empty($obj['edit_unit_id'] ?? '')) {
             $output["head"]["code"] = 400;
             $output["head"]["msg"]  = "Unit name already exists.";
         } else {
-            $insert = "INSERT INTO unit (unit_name, short_name, create_at, delete_at) 
-                       VALUES ('$unit_name', '$short_name', '$timestamp', 0)";
+            // Include 'conversion' in the insert statement
+            $insert = "INSERT INTO unit (unit_name, short_name, conversion, create_at, delete_at) 
+                       VALUES ('$unit_name', '$short_name', '$conversion', '$timestamp', 0)";
 
             if ($conn->query($insert)) {
                 $new_id = $conn->insert_id;
