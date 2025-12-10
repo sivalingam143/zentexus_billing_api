@@ -158,20 +158,37 @@
                 // Handle Stock - Ensure it's treated as a string for DB storage
             $stock          = $obj['stock'] ?? '{}';
                 // --- 3. Category Update Logic ---
-                $category_id    = $conn->real_escape_string($obj['category_id'] ?? $current['category_id']);
-                $category_name  = $current['category_name']; // Default to current name
+              // --- 3. Category Update Logic (FIXED FOR ARRAY STRING SUPPORT) ---
+// This logic prioritizes the explicit JSON array string from the modal, 
+// but falls back to the old behavior for the standard edit form.
 
-                // If a new category_id is provided, fetch the corresponding category_name from the 'category' table
-                if (isset($obj['category_id'])) {
-                    $res = $conn->query("SELECT category_name FROM category WHERE category_id = '$category_id' AND delete_at = 0 LIMIT 1");
-                    if ($res && $res->num_rows > 0) {
-                        $category_name = $res->fetch_assoc()['category_name'];
-                    }
-                }
-                // If category_name is explicitly passed, use it (might be used when category_id is unchanged)
-                else if (isset($obj['category_name'])) {
-                    $category_name = $conn->real_escape_string($obj['category_name']);
-                }
+// 1. Handle incoming category_name (which will be the JSON array string from the modal)
+if (isset($obj['category_name'])) {
+    // If the category_name is sent, use it AS-IS (it's already the JSON string).
+    $category_name = $conn->real_escape_string($obj['category_name']);
+} else {
+    // If not sent, default to the current value.
+    $category_name = $current['category_name']; 
+}
+
+// 2. Handle incoming category_id
+if (isset($obj['category_id'])) {
+    // If the category_id is sent, use it AS-IS (it's the JSON array string or a single ID).
+    $category_id = $conn->real_escape_string($obj['category_id']);
+    
+    // CRITICAL: If category_name was *not* explicitly provided, it means this is a single-category update
+    // (like from the standard product edit form), so we must fetch the name based on the ID.
+    if (!isset($obj['category_name'])) {
+        $res = $conn->query("SELECT category_name FROM category WHERE category_id = '$category_id' AND delete_at = 0 LIMIT 1");
+        if ($res && $res->num_rows > 0) {
+            $category_name = $conn->real_escape_string($res->fetch_assoc()['category_name']);
+        }
+    }
+} else {
+    // If category_id is not sent, default to the current value.
+    $category_id = $current['category_id'];
+}
+// Note: $category_id and $category_name are now correctly set to either single values OR JSON array strings.
 
                 // --- 4. Duplicate Check ---
                 $check = $conn->query("
