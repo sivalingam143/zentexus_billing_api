@@ -54,7 +54,7 @@ else if (isset($obj->name) && !isset($obj->edit_parties_id)) {
     $email            = $obj->email ?? '';
     $billing_address  = $obj->billing_address ?? '';
     $shipping_address = $obj->shipping_address ?? '';
-    $amount           = floatval($obj->amount ?? 0);
+    $amount           = $amount = $obj->amount ?? '0';
     $creditlimit      = floatval($obj->creditlimit ?? 0);
     $state_of_supply  = $obj->state_of_supply ?? '';
     $gstin_type_id    = $obj->gstin_type_id ?? '';
@@ -73,7 +73,7 @@ else if (isset($obj->name) && !isset($obj->edit_parties_id)) {
                 ) VALUES (
                     '$name','$gstin','$phone','$gstin_type_id','$gstin_type_name','$email',
                     '$state_of_supply','$billing_address','$shipping_address',
-                    '$amount','$transaction_type','$additional_field','$creditlimit','$timestamp','0'
+                    $amount,'$transaction_type','$additional_field','$creditlimit','$timestamp','0'
                 )";
 
         if ($conn->query($sql)) {
@@ -103,7 +103,7 @@ else if (isset($obj->edit_parties_id)) {
     $email            = $obj->email ?? '';
     $billing_address  = $obj->billing_address ?? '';
     $shipping_address = $obj->shipping_address ?? '';
-    $amount           = floatval($obj->amount ?? 0);
+    $amount           = $amount = $obj->amount ?? '0';
     $creditlimit      = floatval($obj->creditlimit ?? 0);
     $state_of_supply  = $obj->state_of_supply ?? '';
     $gstin_type_id    = $obj->gstin_type_id ?? '';
@@ -128,7 +128,7 @@ else if (isset($obj->edit_parties_id)) {
                 state_of_supply='$state_of_supply',
                 billing_address='$billing_address',
                 shipping_address='$shipping_address',
-                amount='$amount',
+                amount=$amount,
                 transaction_type='$transaction_type',
                 additional_field='$additional_field',
                 creditlimit='$creditlimit'
@@ -156,5 +156,5 @@ else {
     $output["head"]["msg"] = "Invalid request";
 }
 
-echo json_encode($output, JSON_NUMERIC_CHECK);
+echo json_encode($output);
 ?>
