@@ -60,11 +60,7 @@ if (isset($obj->search_text)) {
             $row['balance_due'] = number_format((float)$row['balance_due'], 2, '.', '');
             $row['converted_to_sale'] = (int)$row['converted_to_sale'];
             $row['sale_id'] = $row['sale_id'] ?? null;
-            $row['converted_to_sale'] = (int)$row['converted_to_sale'];
-            $row['sale_id'] = $row['sale_id'] ?? null;
-             if ($row['converted_to_sale'] == 1) {
-              $row['status'] = 'Converted';  // or 'Accepted'
-            }
+   
             // Add proper status
             if ($row['delete_at'] == 1) {
                 $row['status'] = 'Cancelled';

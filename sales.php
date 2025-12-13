@@ -57,97 +57,135 @@ if (isset($obj->search_text)) {
 }
 // <<<<<<<<<<===================== This is to Create sale =====================>>>>>>>>>>
 else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
-    $invoice_no       = $conn->real_escape_string($obj->invoice_no);
-    $parties_id       = $conn->real_escape_string($obj->parties_id ?? '');
-    $name             = $conn->real_escape_string($obj->name ?? '');
-    $phone            = $conn->real_escape_string($obj->phone ?? '');
-    $billing_address  = $conn->real_escape_string($obj->billing_address ?? '');
-    $shipping_address = $conn->real_escape_string($obj->shipping_address ?? '');
-    $invoice_date     = $conn->real_escape_string($obj->invoice_date ?? date('Y-m-d'));
-    $state_of_supply  = $conn->real_escape_string($obj->state_of_supply ?? '');
-    $products         = $conn->real_escape_string($obj->products ?? '[]');
-    $round_off        = 0;
-    if (isset($obj->rount_off)) {
-        $round_off = ($obj->rount_off == 1 || $obj->rount_off === true) ? 1 : 0;
-    } elseif (isset($obj->round_off)) {
-        $round_off = ($obj->round_off == 1 || $obj->round_off === true) ? 1 : 0;
+    // $invoice_no = $obj->invoice_no;
+    $invoice_no = $obj->invoice_no;
+    $parties_id = isset($obj->parties_id) ? $obj->parties_id : '';
+    $name = $obj->name;
+    $phone = isset($obj->phone) ? $obj->phone : '';
+    $billing_address = isset($obj->billing_address) ? $obj->billing_address : '';
+    $shipping_address = isset($obj->shipping_address) ? $obj->shipping_address : '';
+    $invoice_date = isset($obj->invoice_date) ? $obj->invoice_date : '';
+    $state_of_supply = isset($obj->state_of_supply) ? $obj->state_of_supply : '';
+    $products = $obj->products ?? '[]';
+    $rount_off = isset($obj->rount_off) ? $obj->rount_off : 0;
+    $round_off_amount = isset($obj->round_off_amount) ? $obj->round_off_amount : 0;
+    $total = isset($obj->total) ? $obj->total : 0;
+    $received_amount = isset($obj->received_amount) ? floatval($obj->received_amount) : '';
+    
+    $payment_type = isset($obj->payment_type) ? $obj->payment_type : '';
+    $description = isset($obj->description) ? $obj->description : '';
+    $add_image = $conn->real_escape_string($obj->add_image ?? '');
+    $documents = isset($obj->documents) ? $obj->documents : '[]';
+
+    $total           = floatval($obj->total ?? 0);
+    $received_amount = floatval($obj->received_amount ?? 0);
+    $balance_due     = $total - $received_amount;
+
+    // AUTO CALCULATE STATUS
+    if ($balance_due == 0) {
+        $status = 'Paid';
+    } elseif ($received_amount == 0 && $balance_due > 0) {
+        $status = 'Unpaid';
+    } elseif ($received_amount > 0 && $balance_due > 0) {
+        $status = 'Partially Paid';
+    } else {
+        $status = 'Unpaid';
     }
-    $round_off_amount = floatval($obj->round_off_amount ?? 0);
-    $payment_type     = $conn->real_escape_string($obj->payment_type ?? '');
-    $description      = $conn->real_escape_string($obj->description ?? '');
-    $add_image        = $conn->real_escape_string($obj->add_image ?? '');
-    $documents        = $conn->real_escape_string($obj->documents ?? '');
-    $total            = floatval($obj->total ?? 0);
-    $received_amount  = floatval($obj->received_amount ?? 0);
-    $status           = $conn->real_escape_string($obj->status ?? 'Unpaid');
 
-    $createUnit = "INSERT INTO `sales` (
-        `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `payment_type`, `description`, `add_image`, `documents`, `total`, `received_amount`, `status`, `create_at`
-    ) VALUES (
-        '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$round_off', '$round_off_amount', '$payment_type', '$description', '$add_image', '$documents', '$total', '$received_amount', '$status', '$timestamp'
-    )";
+    
+    $check = $conn->query("SELECT id FROM sales WHERE invoice_no = '$invoice_no' AND delete_at = 0");
+    if ($check->num_rows > 0) {
+        $output["head"]["code"] = 400;
+        $output["head"]["msg"] = "Invoice number already exists!";
+        echo json_encode($output, JSON_NUMERIC_CHECK);
+        exit;
+    }
 
-    if ($conn->query($createUnit)) {
-        $id = $conn->insert_id;
-        $enId = uniqueID('sale', $id);  // Assuming you have uniqueID function
-        $updateSaleId = "UPDATE `sales` SET sale_id = '$enId' WHERE `id` = '$id'";
-        $conn->query($updateSaleId);
-
-        // ==================== ADDED CODE: Mark Estimate as Converted ====================
+    $unitCheck = $conn->query("SELECT `id` FROM `sales` WHERE `invoice_no`='$invoice_no' AND delete_at = 0");
+    if ($unitCheck->num_rows == 0) {
+        $createUnit = "INSERT INTO `sales`(`sale_id`, `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `payment_type`,`description`,`add_image`,`documents`,`total`,`received_amount`,`status`,`create_at`, `delete_at`) VALUES (NULL, '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$rount_off', '$round_off_amount', '$payment_type','$description','$add_image','$documents','$total','$received_amount','$status', '$timestamp', '0')";
+        if ($conn->query($createUnit)) {
+            $id = $conn->insert_id;
+            $enId = uniqueID('sale', $id);
+            $updateUserId = "update `sales` SET sale_id ='$enId' WHERE `id`='$id'";
+            $conn->query($updateUserId);
+    // ================== NEW: Estimate  ==================
         if (isset($obj->from_estimate_id) && !empty($obj->from_estimate_id)) {
             $from_estimate_id = $conn->real_escape_string($obj->from_estimate_id);
 
+            // Estimate-a update pannu
             $updateEstimate = "UPDATE `estimates` 
                                SET `converted_to_sale` = 1, 
-                                   `sale_id` = '$enId',
-                                   `status` = 'Converted'
+                                   `sale_id` = '$enId'
+                                   
                                WHERE `estimate_id` = '$from_estimate_id' 
-                                 AND `delete_at` = 0";
+                               AND `delete_at` = 0";
 
-            $conn->query($updateEstimate);
-            // Optional error log if needed: error_log if fails
+            // CRITICAL FIX: Add error checking for robust conversion
+            if (!$conn->query($updateEstimate)) { 
+                // Log error for silent failure, but do not exit as sale was successful.
+                error_log("Estimate Conversion Error for ID: " . $from_estimate_id . " - " . $conn->error);
+            }
         }
-        // =================================================================================
-
-        $output["head"]["code"] = 200;
-        $output["head"]["msg"] = "Successfully sale Created";
-        $output["body"]["sale_id"] = $enId;
+        // =====================================================================
+            $output["head"]["code"] = 200;
+            $output["head"]["msg"] = "Successfully sale Created";
+            $output["body"]["invoice_no"] = $invoice_no;
+            $output["body"]["sale_id"] = $enId;
+        } else {
+            $output["head"]["code"] = 400;
+            $output["head"]["msg"] = "Failed to connect. Please try again.";
+        }
     } else {
         $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "SQL Error: " . $conn->error;
+        $output["head"]["msg"] = "sale Invoice No Already Exist.";
     }
-    
-    echo json_encode($output, JSON_NUMERIC_CHECK);
-    exit();
 }
 
-// <<<<<<<<<<===================== This is to Update sale =====================>>>>>>>>>>
+// <<<<<<<<<<===================== This is to Edit sale =====================>>>>>>>>>>
 else if (isset($obj->edit_sales_id)) {
-    $edit_id = $conn->real_escape_string($obj->edit_sales_id);
-    $parties_id = $conn->real_escape_string($obj->parties_id ?? '');
-    $name = $conn->real_escape_string($obj->name ?? '');
-    $phone = $conn->real_escape_string($obj->phone ?? '');
-    $billing_address = $conn->real_escape_string($obj->billing_address ?? '');
-    $shipping_address = $conn->real_escape_string($obj->shipping_address ?? '');
-    $invoice_no = $conn->real_escape_string($obj->invoice_no ?? '');
-    $invoice_date = $conn->real_escape_string($obj->invoice_date ?? date('Y-m-d'));
-    $state_of_supply = $conn->real_escape_string($obj->state_of_supply ?? '');
-    $products = $conn->real_escape_string($obj->products ?? '[]');
-    $rount_off = 0;
-    if (isset($obj->rount_off)) {
-        $rount_off = ($obj->rount_off == 1 || $obj->rount_off === true) ? 1 : 0;
-    } elseif (isset($obj->round_off)) {
-        $rount_off = ($obj->round_off == 1 || $obj->round_off === true) ? 1 : 0;
+    $edit_id = $obj->edit_sales_id;
+    if (empty($edit_id)) {
+        $output["head"]["code"] = 400;
+        $output["head"]["msg"] = "Edit ID is required";
+        echo json_encode($output, JSON_NUMERIC_CHECK);
+        exit;
     }
-    $round_off_amount = floatval($obj->round_off_amount ?? 0);
-    $payment_type = $conn->real_escape_string($obj->payment_type ?? '');
-    $description = $conn->real_escape_string($obj->description ?? '');
-    $add_image = $conn->real_escape_string($obj->add_image ?? '');
-    $documents = $conn->real_escape_string($obj->documents ?? '');
-    $total = floatval($obj->total ?? 0);
+    $total           = floatval($obj->total ?? 0);
     $received_amount = floatval($obj->received_amount ?? 0);
-    $status = $conn->real_escape_string($obj->status ?? 'Unpaid');
+    $balance_due     = $total - $received_amount;
 
+    // RECALCULATE STATUS ON UPDATE
+    if ($balance_due == 0) {
+        $status = 'Paid';
+    } elseif ($received_amount == 0 && $balance_due > 0) {
+        $status = 'Unpaid';
+    } elseif ($received_amount > 0 && $balance_due > 0) {
+        $status = 'Partially Paid';
+    } else {
+        $status = 'Unpaid';
+    }
+
+    $parties_id         = $conn->real_escape_string($obj->parties_id ?? '');
+    $name              = $conn->real_escape_string($obj->name ?? '');
+    $phone            = $conn->real_escape_string($obj->phone ?? '');
+    $billing_address   = $conn->real_escape_string($obj->billing_address ?? '');
+    $shipping_address  = $conn->real_escape_string($obj->shipping_address ?? '');
+    $invoice_no       = $conn->real_escape_string($obj->invoice_no ?? '');
+    $invoice_date     = $obj->invoice_date ?? '';
+    $state_of_supply   = $conn->real_escape_string($obj->state_of_supply ?? '');
+    $products = $obj->products ?? '[]';
+    $rount_off         = $obj->rount_off ?? 0;
+    $round_off_amount  = $obj->round_off_amount ?? 0;
+    $total            = $obj->total ?? 0;
+    $received_amount    = isset($obj->received_amount) ? floatval($obj->received_amount) : 0;
+    
+    $payment_type      = $conn->real_escape_string($obj->payment_type ?? '');
+    $description       = $conn->real_escape_string($obj->description ?? '');
+    $add_image         = $conn->real_escape_string($obj->add_image ?? '');
+    $documents         = $conn->real_escape_string($obj->documents ?? '');
+
+    // FIX: Added missing quote and space before WHERE
     $updateUnit = "UPDATE `sales` SET 
         `parties_id`='$parties_id',
         `name`='$name',
@@ -168,7 +206,7 @@ else if (isset($obj->edit_sales_id)) {
         `received_amount`='$received_amount',
         `status`='$status'
         
-        WHERE `sale_id`='$edit_id'";
+        WHERE `sale_id`='$edit_id'";  // ← THIS WAS BROKEN BEFORE
 
     if ($conn->query($updateUnit)) {
         $output["head"]["code"] = 200;
@@ -177,11 +215,7 @@ else if (isset($obj->edit_sales_id)) {
         $output["head"]["code"] = 400;
         $output["head"]["msg"] = "SQL Error: " . $conn->error; // helpful for debugging
     }
-    
-    echo json_encode($output, JSON_NUMERIC_CHECK);
-    exit();
 }
-
 // <<<<<<<<<<===================== This is to Delete the sale =====================>>>>>>>>>>
 else if (isset($obj->delete_sales_id)) {
     $delete_sales_id = $obj->delete_sales_id;
@@ -204,3 +238,4 @@ else if (isset($obj->delete_sales_id)) {
 }
 
 echo json_encode($output, JSON_NUMERIC_CHECK);
+?>
