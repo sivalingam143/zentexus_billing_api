@@ -9,17 +9,14 @@ header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Content-Type: application/json; charset=utf-8');
 
 // Handle preflight OPTIONS request
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {http_response_code(200);
     exit();
 }
 
 // Check request method
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode([
-        "head" => ["code" => 405, "msg" => "Method Not Allowed - Only POST allowed"]
-    ]);
-    exit();
+    echo json_encode(["head" => ["code" => 405, "msg" => "Method Not Allowed - Only POST allowed"]]);
+    exit();    
 }
 
 // Read JSON input
@@ -27,9 +24,7 @@ $json = file_get_contents('php://input');
 $obj = json_decode($json);
 
 if (!$obj) {
-    echo json_encode([
-        "head" => ["code" => 400, "msg" => "Invalid JSON data"]
-    ]);
+    echo json_encode([ "head" => ["code" => 400, "msg" => "Invalid JSON data"]]);
     exit();
 }
 
