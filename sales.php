@@ -57,6 +57,7 @@ if (isset($obj->search_text)) {
 }
 // <<<<<<<<<<===================== This is to Create sale =====================>>>>>>>>>>
 else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
+    // $invoice_no = $obj->invoice_no;
     $invoice_no = $obj->invoice_no;
     $parties_id = isset($obj->parties_id) ? $obj->parties_id : '';
     $name = $obj->name;
@@ -91,20 +92,14 @@ else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
         $status = 'Unpaid';
     }
 
-    // AUTO GENERATE INVOICE NUMBER
-    $year = date('Y');
-    $month = date('m');
-    $prefix = "INV{$year}{$month}-";   // Example: INV202511-
-
-    $sql = "SELECT invoice_no FROM sales WHERE invoice_no LIKE '$prefix%' ORDER BY id DESC LIMIT 1";
-    $result = $conn->query($sql);
-    if ($result->num_rows > 0) {
-        $last = $result->fetch_assoc()['invoice_no'];
-        $num = (int)substr($last, strlen($prefix)) + 1;
-    } else {
-        $num = 1;
+    
+    $check = $conn->query("SELECT id FROM sales WHERE invoice_no = '$invoice_no' AND delete_at = 0");
+    if ($check->num_rows > 0) {
+        $output["head"]["code"] = 400;
+        $output["head"]["msg"] = "Invoice number already exists!";
+        echo json_encode($output, JSON_NUMERIC_CHECK);
+        exit;
     }
-    $invoice_no = $prefix . str_pad($num, 4, '0', STR_PAD_LEFT); // INV202511-0001
 
     $unitCheck = $conn->query("SELECT `id` FROM `sales` WHERE `invoice_no`='$invoice_no' AND delete_at = 0");
     if ($unitCheck->num_rows == 0) {
@@ -114,9 +109,29 @@ else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
             $enId = uniqueID('sale', $id);
             $updateUserId = "update `sales` SET sale_id ='$enId' WHERE `id`='$id'";
             $conn->query($updateUserId);
+    // ================== NEW: Estimate  ==================
+        if (isset($obj->from_estimate_id) && !empty($obj->from_estimate_id)) {
+            $from_estimate_id = $conn->real_escape_string($obj->from_estimate_id);
+
+            // Estimate-a update pannu
+            $updateEstimate = "UPDATE `estimates` 
+                               SET `converted_to_sale` = 1, 
+                                   `sale_id` = '$enId'
+                                   
+                               WHERE `estimate_id` = '$from_estimate_id' 
+                               AND `delete_at` = 0";
+
+            // CRITICAL FIX: Add error checking for robust conversion
+            if (!$conn->query($updateEstimate)) { 
+                // Log error for silent failure, but do not exit as sale was successful.
+                error_log("Estimate Conversion Error for ID: " . $from_estimate_id . " - " . $conn->error);
+            }
+        }
+        // =====================================================================
             $output["head"]["code"] = 200;
             $output["head"]["msg"] = "Successfully sale Created";
             $output["body"]["invoice_no"] = $invoice_no;
+            $output["body"]["sale_id"] = $enId;
         } else {
             $output["head"]["code"] = 400;
             $output["head"]["msg"] = "Failed to connect. Please try again.";
@@ -223,3 +238,4 @@ else if (isset($obj->delete_sales_id)) {
 }
 
 echo json_encode($output, JSON_NUMERIC_CHECK);
+?>
