@@ -8,215 +8,198 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 header('Content-Type: application/json; charset=utf-8');
+
 $json = file_get_contents('php://input');
 $obj = json_decode($json);
-$output = array();
+
+if ($obj === null) {
+    echo json_encode(["head" => ["code" => 400, "msg" => "Invalid JSON"]], JSON_NUMERIC_CHECK);
+    exit;
+}
+
+$output = ["head" => ["code" => 400, "msg" => "Parameter mismatch"]];
 date_default_timezone_set('Asia/Calcutta');
 $timestamp = date('Y-m-d H:i:s');
 
-// SEARCH BLOCK 
+// Helper: Generate unique reference number (e.g., PROF-20251216-001)
+function generateReferenceNo($conn) {
+    $today = date('Ymd');
+    $prefix = "PROF-{$today}-";
+
+    $sql = "SELECT reference_no FROM proforma WHERE reference_no LIKE ? ORDER BY reference_no DESC LIMIT 1";
+    $stmt = $conn->prepare($sql);
+    $like = $prefix . '%';
+    $stmt->bind_param("s", $like);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($row = $result->fetch_assoc()) {
+        $last = $row['reference_no'];
+        $num = (int)substr($last, strlen($prefix));
+        $next = $num + 1;
+    } else {
+        $next = 1;
+    }
+    $stmt->close();
+
+    return $prefix . str_pad($next, 3, '0', STR_PAD_LEFT);
+}
+
+// SEARCH BLOCK
 if (isset($obj->search_text)) {
-    $search_text = $conn->real_escape_string($obj->search_text);
-    $sql = "SELECT *, 
-            (`total` - `received_amount`) AS balance_due 
-            FROM `Proforma` 
-            WHERE `delete_at` = 0 
-            AND (`name` LIKE '%$search_text%' OR `invoice_no` LIKE '%$search_text%')
-            ORDER BY `id` DESC";
-    
-    $result = $conn->query($sql);
+    $search_text = '%' . $conn->real_escape_string($obj->search_text) . '%';
+    $sql = "SELECT *, (`total` - `received_amount`) AS balance_due 
+            FROM proforma 
+            WHERE delete_at = 0 
+            AND (name LIKE ? OR reference_no LIKE ?)
+            ORDER BY proforma_id DESC";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ss", $search_text, $search_text);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
     $output["head"]["code"] = 200;
     $output["head"]["msg"] = "Success";
-    $output["body"]["Proforma"] = [];
+    $output["body"]["proforma"] = [];
 
-    if ($result->num_rows > 0) {
-        while ($row = $result->fetch_assoc()) {
-            // Force correct number format
-            $row['total'] = number_format((float)$row['total'], 2, '.', '');
-            $row['received_amount'] = number_format((float)$row['received_amount'], 2, '.', '');
-            $row['balance_due'] = number_format((float)$row['balance_due'], 2, '.', '');
+    while ($row = $result->fetch_assoc()) {
+        $row['total'] = number_format((float)$row['total'], 2, '.', '');
+        $row['received_amount'] = number_format((float)$row['received_amount'], 2, '.', '');
+        $row['balance_due'] = number_format((float)$row['balance_due'], 2, '.', '');
 
-            // Add proper status
-            if ($row['delete_at'] == 1) {
-                $row['status'] = 'Cancelled';
-            } elseif ($row['balance_due'] == 0) {
-                $row['status'] = 'Paid';
-            } elseif ($row['received_amount'] == 0 && $row['balance_due'] > 0) {
-                $row['status'] = 'Unpaid';
-            } elseif ($row['received_amount'] > 0 && $row['balance_due'] > 0) {
-                $row['status'] = 'Partially Paid';
-            } else {
-                $row['status'] = 'Unpaid';
-            }
+        $balance = (float)$row['balance_due'];
+        $received = (float)$row['received_amount'];
 
-            $output["body"]["Proforma"][] = $row;
-        }
-    } else {
-        $output["head"]["msg"] = "No records found";
-    }
-}
-// <<<<<<<<<<===================== This is to Create sale =====================>>>>>>>>>>
-else if (isset($obj->invoice_no) && !isset($obj->edit_Proforma_id)) {
-    // $invoice_no = $obj->invoice_no;
-    $invoice_no = $obj->invoice_no;
-    $parties_id = isset($obj->parties_id) ? $obj->parties_id : '';
-    $name = $obj->name;
-    $phone = isset($obj->phone) ? $obj->phone : '';
-    $billing_address = isset($obj->billing_address) ? $obj->billing_address : '';
-    $shipping_address = isset($obj->shipping_address) ? $obj->shipping_address : '';
-    $invoice_date = isset($obj->invoice_date) ? $obj->invoice_date : '';
-    $state_of_supply = isset($obj->state_of_supply) ? $obj->state_of_supply : '';
-    $products = $obj->products ?? '[]';
-    $rount_off = isset($obj->rount_off) ? $obj->rount_off : 0;
-    $round_off_amount = isset($obj->round_off_amount) ? $obj->round_off_amount : 0;
-    $total = isset($obj->total) ? $obj->total : 0;
-    $received_amount = isset($obj->received_amount) ? floatval($obj->received_amount) : '';
-    
-    $payment_type = isset($obj->payment_type) ? $obj->payment_type : '';
-    $description = isset($obj->description) ? $obj->description : '';
-    $add_image = $conn->real_escape_string($obj->add_image ?? '');
-    $documents = isset($obj->documents) ? $obj->documents : '[]';
-
-    $total           = floatval($obj->total ?? 0);
-    $received_amount = floatval($obj->received_amount ?? 0);
-    $balance_due     = $total - $received_amount;
-
-    // AUTO CALCULATE STATUS
-    if ($balance_due == 0) {
-        $status = 'Paid';
-    } elseif ($received_amount == 0 && $balance_due > 0) {
-        $status = 'Unpaid';
-    } elseif ($received_amount > 0 && $balance_due > 0) {
-        $status = 'Partially Paid';
-    } else {
-        $status = 'Unpaid';
-    }
-
-    
-    $check = $conn->query("SELECT id FROM Proforma WHERE invoice_no = '$invoice_no' AND delete_at = 0");
-    if ($check->num_rows > 0) {
-        $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "Invoice number already exists!";
-        echo json_encode($output, JSON_NUMERIC_CHECK);
-        exit;
-    }
-
-    $unitCheck = $conn->query("SELECT `id` FROM `Proforma` WHERE `invoice_no`='$invoice_no' AND delete_at = 0");
-    if ($unitCheck->num_rows == 0) {
-        $createUnit = "INSERT INTO `Proforma`(`Proforma_id`, `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `payment_type`,`description`,`add_image`,`documents`,`total`,`received_amount`,`status`,`create_at`, `delete_at`) VALUES (NULL, '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$rount_off', '$round_off_amount', '$payment_type','$description','$add_image','$documents','$total','$received_amount','$status', '$timestamp', '0')";
-        if ($conn->query($createUnit)) {
-            $id = $conn->insert_id;
-            $enId = uniqueID('Proforma', $id);
-            $updateUserId = "update `Proforma` SET Proforma_id ='$enId' WHERE `id`='$id'";
-            $conn->query($updateUserId);
-    
-            $output["head"]["code"] = 200;
-            $output["head"]["msg"] = "Successfully Proforma Created";
-            $output["body"]["invoice_no"] = $invoice_no;
-            $output["body"]["Proforma_id"] = $enId;
+        if ($row['delete_at'] == 1) {
+            $row['status'] = 'Cancelled';
+        } elseif ($balance == 0) {
+            $row['status'] = 'Paid';
+        } elseif ($received == 0) {
+            $row['status'] = 'Unpaid';
         } else {
-            $output["head"]["code"] = 400;
-            $output["head"]["msg"] = "Failed to connect. Please try again.";
+            $row['status'] = 'Partially Paid';
         }
-    } else {
-        $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "Proforma Invoice No Already Exist.";
+        $output["body"]["proforma"][] = $row;
     }
+    $stmt->close();
 }
 
-// <<<<<<<<<<===================== This is to Edit sale =====================>>>>>>>>>>
-else if (isset($obj->edit_Proforma_id)) {
-    $edit_id = $obj->edit_Proforma_id;
-    if (empty($edit_id)) {
-        $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "Edit ID is required";
-        echo json_encode($output, JSON_NUMERIC_CHECK);
-        exit;
-    }
-    $total           = floatval($obj->total ?? 0);
-    $received_amount = floatval($obj->received_amount ?? 0);
-    $balance_due     = $total - $received_amount;
+// CREATE PROFORMA
+else if (!isset($obj->edit_proforma_id)) {
+    $parties_id        = $obj->parties_id ?? null;
+    $name              = $obj->name ?? '';
+    $phone             = $obj->phone ?? '';
+    $billing_address   = $obj->billing_address ?? '';
+    $shipping_address  = $obj->shipping_address ?? '';
+    $invoice_date      = $obj->invoice_date ?? date('Y-m-d');
+    $state_of_supply   = $obj->state_of_supply ?? '';
+    $payment_type      = $obj->payment_type ?? '';
+    $description       = $obj->description ?? '';
+    $add_image         = $obj->add_image ?? '';
+    $documents         = $obj->documents ?? '[]';
+    $products          = $obj->products ?? '[]';
+    $rount_off         = (int)($obj->rount_off ?? 0);
+    $round_off_amount  = (float)($obj->round_off_amount ?? 0);
+    $total             = (float)($obj->total ?? 0);
+    $received_amount   = (float)($obj->received_amount ?? 0);
 
-    // RECALCULATE STATUS ON UPDATE
-    if ($balance_due == 0) {
-        $status = 'Paid';
-    } elseif ($received_amount == 0 && $balance_due > 0) {
-        $status = 'Unpaid';
-    } elseif ($received_amount > 0 && $balance_due > 0) {
-        $status = 'Partially Paid';
-    } else {
-        $status = 'Unpaid';
-    }
+    $balance_due = $total - $received_amount;
+    $status = ($balance_due == 0) ? 'Paid' : (($received_amount == 0) ? 'Unpaid' : 'Partially Paid');
+    $reference_no = generateReferenceNo($conn);
 
-    $parties_id         = $conn->real_escape_string($obj->parties_id ?? '');
-    $name              = $conn->real_escape_string($obj->name ?? '');
-    $phone            = $conn->real_escape_string($obj->phone ?? '');
-    $billing_address   = $conn->real_escape_string($obj->billing_address ?? '');
-    $shipping_address  = $conn->real_escape_string($obj->shipping_address ?? '');
-    $invoice_no       = $conn->real_escape_string($obj->invoice_no ?? '');
-    $invoice_date     = $obj->invoice_date ?? '';
-    $state_of_supply   = $conn->real_escape_string($obj->state_of_supply ?? '');
-    $products = $obj->products ?? '[]';
-    $rount_off         = $obj->rount_off ?? 0;
-    $round_off_amount  = $obj->round_off_amount ?? 0;
-    $total            = $obj->total ?? 0;
-    $received_amount    = isset($obj->received_amount) ? floatval($obj->received_amount) : 0;
-    
-    $payment_type      = $conn->real_escape_string($obj->payment_type ?? '');
-    $description       = $conn->real_escape_string($obj->description ?? '');
-    $add_image         = $conn->real_escape_string($obj->add_image ?? '');
-    $documents         = $conn->real_escape_string($obj->documents ?? '');
+    $sql = "INSERT INTO proforma (
+        parties_id, name, phone, billing_address, shipping_address,
+        reference_no, invoice_date, state_of_supply, payment_type, description,
+        add_image, documents, products, rount_off, round_off_amount,
+        total, received_amount, status, created_at, delete_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)";
 
-  
-    $updateUnit = "UPDATE `Proforma` SET 
-        `parties_id`='$parties_id',
-        `name`='$name',
-        `phone`='$phone',
-        `billing_address`='$billing_address',
-        `shipping_address`='$shipping_address',
-        `invoice_no`='$invoice_no',
-        `invoice_date`='$invoice_date',
-        `state_of_supply`='$state_of_supply',
-        `products`='$products',
-        `rount_off`='$rount_off',
-        `round_off_amount`='$round_off_amount',
-        `payment_type`='$payment_type',
-        `description`='$description',
-        `add_image`='$add_image',
-        `documents`='$documents',
-        `total`='$total',
-        `received_amount`='$received_amount',
-        `status`='$status'
-        
-        WHERE `Proforma_id`='$edit_id'";  
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("issssssssssssidddss",
+        $parties_id, $name, $phone, $billing_address, $shipping_address,
+        $reference_no, $invoice_date, $state_of_supply, $payment_type, $description,
+        $add_image, $documents, $products, $rount_off, $round_off_amount,
+        $total, $received_amount, $status, $timestamp
+    );
 
-    if ($conn->query($updateUnit)) {
+    if ($stmt->execute()) {
+        $insert_id = $conn->insert_id;
+        // Assuming you have a uniqueID function like in sales
+        // If not, skip or adjust accordingly
+        // $enId = uniqueID('proforma', $insert_id);
+
         $output["head"]["code"] = 200;
-        $output["head"]["msg"] = "Successfully Proforma Details Updated";
+        $output["head"]["msg"] = "Proforma created successfully";
+        $output["body"]["reference_no"] = $reference_no;
+        $output["body"]["proforma_id"] = $insert_id; // or $enId if you use it
     } else {
-        $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "SQL Error: " . $conn->error; 
+        $output["head"]["msg"] = "Failed to create: " . $stmt->error;
     }
+    $stmt->close();
 }
-// <<<<<<<<<<===================== This is to Delete the sale =====================>>>>>>>>>>
-else if (isset($obj->delete_Proforma_id)) {
-    $delete_Proforma_id = $obj->delete_Proforma_id;
-    if (!empty($delete_Proforma_id)) {
-        $deleteUnit = "UPDATE `Proforma` SET `delete_at`=1 WHERE `Proforma_id`='$delete_Proforma_id'";
-        if ($conn->query($deleteUnit)) {
-            $output["head"]["code"] = 200;
-            $output["head"]["msg"] = "Proforma Deleted Successfully.!";
-        } else {
-            $output["head"]["code"] = 400;
-            $output["head"]["msg"] = "Failed to connect. Please try again.";
-        }
+
+// UPDATE PROFORMA
+else if (isset($obj->edit_proforma_id)) {
+    $edit_id           = $obj->edit_proforma_id;
+    $parties_id        = $obj->parties_id ?? null;
+    $name              = $obj->name ?? '';
+    $phone             = $obj->phone ?? '';
+    $billing_address   = $obj->billing_address ?? '';
+    $shipping_address  = $obj->shipping_address ?? '';
+    $reference_no      = $obj->reference_no ?? ''; // allow manual if needed
+    $invoice_date      = $obj->invoice_date ?? date('Y-m-d');
+    $state_of_supply   = $obj->state_of_supply ?? '';
+    $payment_type      = $obj->payment_type ?? '';
+    $description       = $obj->description ?? '';
+    $add_image         = $obj->add_image ?? '';
+    $documents         = $obj->documents ?? '[]';
+    $products          = $obj->products ?? '[]';
+    $rount_off         = (int)($obj->rount_off ?? 0);
+    $round_off_amount  = (float)($obj->round_off_amount ?? 0);
+    $total             = (float)($obj->total ?? 0);
+    $received_amount   = (float)($obj->received_amount ?? 0);
+
+    $balance_due = $total - $received_amount;
+    $status = ($balance_due == 0) ? 'Paid' : (($received_amount == 0) ? 'Unpaid' : 'Partially Paid');
+
+    $sql = "UPDATE proforma SET 
+        parties_id=?, name=?, phone=?, billing_address=?, shipping_address=?,
+        reference_no=?, invoice_date=?, state_of_supply=?, payment_type=?, description=?,
+        add_image=?, documents=?, products=?, rount_off=?, round_off_amount=?,
+        total=?, received_amount=?, status=?, updated_at=?
+        WHERE proforma_id=?";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("issssssssssssidddssi",
+        $parties_id, $name, $phone, $billing_address, $shipping_address,
+        $reference_no, $invoice_date, $state_of_supply, $payment_type, $description,
+        $add_image, $documents, $products, $rount_off, $round_off_amount,
+        $total, $received_amount, $status, $timestamp, $edit_id
+    );
+
+    if ($stmt->execute()) {
+        $output["head"]["code"] = 200;
+        $output["head"]["msg"] = "Proforma updated successfully";
     } else {
-        $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "Please provide all the required details.";
+        $output["head"]["msg"] = "Update failed: " . $stmt->error;
     }
-} else {
-    $output["head"]["code"] = 400;
-    $output["head"]["msg"] = "Parameter is Mismatch";
+    $stmt->close();
+}
+
+// DELETE PROFORMA
+else if (isset($obj->delete_proforma_id)) {
+    $delete_id = $obj->delete_proforma_id;
+    $sql = "UPDATE proforma SET delete_at = 1 WHERE proforma_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $delete_id);
+    if ($stmt->execute()) {
+        $output["head"]["code"] = 200;
+        $output["head"]["msg"] = "Proforma deleted successfully";
+    } else {
+        $output["head"]["msg"] = "Delete failed: " . $stmt->error;
+    }
+    $stmt->close();
 }
 
 echo json_encode($output, JSON_NUMERIC_CHECK);
