@@ -55,7 +55,9 @@
                 $product_name   = $conn->real_escape_string($obj['product_name']);
                 $hsn_code       = (int)($obj['hsn_code'] ?? 0);
                 $unit_id        = $conn->real_escape_string($obj['unit_id'] ?? '');
-                $unit_value     = $conn->real_escape_string($obj['unit_value'] ?? '');
+                // $unit_value     = $conn->real_escape_string($obj['unit_value'] ?? '');
+                $unit_value = $obj['unit_value'] ?? '';
+
                 $category_id    = $conn->real_escape_string($obj['category_id'] ?? '');
                 $category_name  = $conn->real_escape_string($obj['category_name'] ?? '');
                 $product_code   = $conn->real_escape_string($obj['product_code'] ?? '');
@@ -145,7 +147,9 @@
                 $product_name   = $conn->real_escape_string($obj['product_name'] ?? $current['product_name']);
                 $hsn_code       = (int)($obj['hsn_code'] ?? $current['hsn_code'] ?? 0);
                 $unit_id        = $conn->real_escape_string($obj['unit_id'] ?? $current['unit_id']);
-                $unit_value     = $conn->real_escape_string($obj['unit_value'] ?? $current['unit_value']);
+                // $unit_value     = $conn->real_escape_string($obj['unit_value'] ?? $current['unit_value']);
+                $unit_value = $obj['unit_value'] ?? '';
+
                 $product_code   = $conn->real_escape_string($obj['product_code'] ?? $current['product_code']);
                 $add_image      = $conn->real_escape_string($obj['add_image'] ?? $current['add_image']);
                 $sale_price     = $conn->real_escape_string($obj['sale_price'] ?? $current['sale_price']);
@@ -321,7 +325,9 @@ if (isset($obj['category_id'])) {
                     $output["head"]["code"] = 400;
                     $output["head"]["msg"]  = "No products selected";
                 } else {
-                    $unit_value = $conn->real_escape_string($obj['unit_value'] ?? '');
+                    // $unit_value = $conn->real_escape_string($obj['unit_value'] ?? '');
+                    $unit_value = $obj['unit_value'] ?? '';
+
                     $unit_id    = $conn->real_escape_string($obj['unit_id'] ?? '');
                     $updated = 0;
 
