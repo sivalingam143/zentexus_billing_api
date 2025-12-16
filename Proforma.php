@@ -19,7 +19,7 @@ if (isset($obj->search_text)) {
     $search_text = $conn->real_escape_string($obj->search_text);
     $sql = "SELECT *, 
             (`total` - `received_amount`) AS balance_due 
-            FROM `sales` 
+            FROM `Proforma` 
             WHERE `delete_at` = 0 
             AND (`name` LIKE '%$search_text%' OR `invoice_no` LIKE '%$search_text%')
             ORDER BY `id` DESC";
@@ -27,7 +27,7 @@ if (isset($obj->search_text)) {
     $result = $conn->query($sql);
     $output["head"]["code"] = 200;
     $output["head"]["msg"] = "Success";
-    $output["body"]["sales"] = [];
+    $output["body"]["Proforma"] = [];
 
     if ($result->num_rows > 0) {
         while ($row = $result->fetch_assoc()) {
@@ -49,14 +49,14 @@ if (isset($obj->search_text)) {
                 $row['status'] = 'Unpaid';
             }
 
-            $output["body"]["sales"][] = $row;
+            $output["body"]["Proforma"][] = $row;
         }
     } else {
         $output["head"]["msg"] = "No records found";
     }
 }
 // <<<<<<<<<<===================== This is to Create sale =====================>>>>>>>>>>
-else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
+else if (isset($obj->invoice_no) && !isset($obj->edit_Proforma_id)) {
     // $invoice_no = $obj->invoice_no;
     $invoice_no = $obj->invoice_no;
     $parties_id = isset($obj->parties_id) ? $obj->parties_id : '';
@@ -93,7 +93,7 @@ else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
     }
 
     
-    $check = $conn->query("SELECT id FROM sales WHERE invoice_no = '$invoice_no' AND delete_at = 0");
+    $check = $conn->query("SELECT id FROM Proforma WHERE invoice_no = '$invoice_no' AND delete_at = 0");
     if ($check->num_rows > 0) {
         $output["head"]["code"] = 400;
         $output["head"]["msg"] = "Invoice number already exists!";
@@ -101,50 +101,32 @@ else if (isset($obj->invoice_no) && !isset($obj->edit_sales_id)) {
         exit;
     }
 
-    $unitCheck = $conn->query("SELECT `id` FROM `sales` WHERE `invoice_no`='$invoice_no' AND delete_at = 0");
+    $unitCheck = $conn->query("SELECT `id` FROM `Proforma` WHERE `invoice_no`='$invoice_no' AND delete_at = 0");
     if ($unitCheck->num_rows == 0) {
-        $createUnit = "INSERT INTO `sales`(`sale_id`, `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `payment_type`,`description`,`add_image`,`documents`,`total`,`received_amount`,`status`,`create_at`, `delete_at`) VALUES (NULL, '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$rount_off', '$round_off_amount', '$payment_type','$description','$add_image','$documents','$total','$received_amount','$status', '$timestamp', '0')";
+        $createUnit = "INSERT INTO `Proforma`(`Proforma_id`, `parties_id`, `name`, `phone`, `billing_address`, `shipping_address`, `invoice_no`, `invoice_date`, `state_of_supply`, `products`, `rount_off`, `round_off_amount`, `payment_type`,`description`,`add_image`,`documents`,`total`,`received_amount`,`status`,`create_at`, `delete_at`) VALUES (NULL, '$parties_id', '$name', '$phone', '$billing_address', '$shipping_address', '$invoice_no', '$invoice_date', '$state_of_supply', '$products', '$rount_off', '$round_off_amount', '$payment_type','$description','$add_image','$documents','$total','$received_amount','$status', '$timestamp', '0')";
         if ($conn->query($createUnit)) {
             $id = $conn->insert_id;
-            $enId = uniqueID('sale', $id);
-            $updateUserId = "update `sales` SET sale_id ='$enId' WHERE `id`='$id'";
+            $enId = uniqueID('Proforma', $id);
+            $updateUserId = "update `Proforma` SET Proforma_id ='$enId' WHERE `id`='$id'";
             $conn->query($updateUserId);
-    // ================== NEW: Estimate  ==================
-        if (isset($obj->from_estimate_id) && !empty($obj->from_estimate_id)) {
-            $from_estimate_id = $conn->real_escape_string($obj->from_estimate_id);
-
-            // Estimate-a update pannu
-            $updateEstimate = "UPDATE `estimates` 
-                               SET `converted_to_sale` = 1, 
-                                   `sale_id` = '$enId'
-                                   
-                               WHERE `estimate_id` = '$from_estimate_id' 
-                               AND `delete_at` = 0";
-
-            // CRITICAL FIX: Add error checking for robust conversion
-            if (!$conn->query($updateEstimate)) { 
-                // Log error for silent failure, but do not exit as sale was successful.
-                error_log("Estimate Conversion Error for ID: " . $from_estimate_id . " - " . $conn->error);
-            }
-        }
-        // =====================================================================
+    
             $output["head"]["code"] = 200;
-            $output["head"]["msg"] = "Successfully sale Created";
+            $output["head"]["msg"] = "Successfully Proforma Created";
             $output["body"]["invoice_no"] = $invoice_no;
-            $output["body"]["sale_id"] = $enId;
+            $output["body"]["Proforma_id"] = $enId;
         } else {
             $output["head"]["code"] = 400;
             $output["head"]["msg"] = "Failed to connect. Please try again.";
         }
     } else {
         $output["head"]["code"] = 400;
-        $output["head"]["msg"] = "sale Invoice No Already Exist.";
+        $output["head"]["msg"] = "Proforma Invoice No Already Exist.";
     }
 }
 
 // <<<<<<<<<<===================== This is to Edit sale =====================>>>>>>>>>>
-else if (isset($obj->edit_sales_id)) {
-    $edit_id = $obj->edit_sales_id;
+else if (isset($obj->edit_Proforma_id)) {
+    $edit_id = $obj->edit_Proforma_id;
     if (empty($edit_id)) {
         $output["head"]["code"] = 400;
         $output["head"]["msg"] = "Edit ID is required";
@@ -186,7 +168,7 @@ else if (isset($obj->edit_sales_id)) {
     $documents         = $conn->real_escape_string($obj->documents ?? '');
 
   
-    $updateUnit = "UPDATE `sales` SET 
+    $updateUnit = "UPDATE `Proforma` SET 
         `parties_id`='$parties_id',
         `name`='$name',
         `phone`='$phone',
@@ -206,24 +188,24 @@ else if (isset($obj->edit_sales_id)) {
         `received_amount`='$received_amount',
         `status`='$status'
         
-        WHERE `sale_id`='$edit_id'";  
+        WHERE `Proforma_id`='$edit_id'";  
 
     if ($conn->query($updateUnit)) {
         $output["head"]["code"] = 200;
-        $output["head"]["msg"] = "Successfully sale Details Updated";
+        $output["head"]["msg"] = "Successfully Proforma Details Updated";
     } else {
         $output["head"]["code"] = 400;
         $output["head"]["msg"] = "SQL Error: " . $conn->error; 
     }
 }
 // <<<<<<<<<<===================== This is to Delete the sale =====================>>>>>>>>>>
-else if (isset($obj->delete_sales_id)) {
-    $delete_sales_id = $obj->delete_sales_id;
-    if (!empty($delete_sales_id)) {
-        $deleteUnit = "UPDATE `sales` SET `delete_at`=1 WHERE `sale_id`='$delete_sales_id'";
+else if (isset($obj->delete_Proforma_id)) {
+    $delete_Proforma_id = $obj->delete_Proforma_id;
+    if (!empty($delete_Proforma_id)) {
+        $deleteUnit = "UPDATE `Proforma` SET `delete_at`=1 WHERE `Proforma_id`='$delete_Proforma_id'";
         if ($conn->query($deleteUnit)) {
             $output["head"]["code"] = 200;
-            $output["head"]["msg"] = "sale Deleted Successfully.!";
+            $output["head"]["msg"] = "Proforma Deleted Successfully.!";
         } else {
             $output["head"]["code"] = 400;
             $output["head"]["msg"] = "Failed to connect. Please try again.";
