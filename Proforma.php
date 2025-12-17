@@ -21,29 +21,6 @@ $output = ["head" => ["code" => 400, "msg" => "Parameter mismatch"]];
 date_default_timezone_set('Asia/Calcutta');
 $timestamp = date('Y-m-d H:i:s');
 
-// Helper: Generate unique reference number (e.g., PROF-20251216-001)
-function generateReferenceNo($conn) {
-    $today = date('Ymd');
-    $prefix = "PROF-{$today}-";
-
-    $sql = "SELECT reference_no FROM proforma WHERE reference_no LIKE ? ORDER BY reference_no DESC LIMIT 1";
-    $stmt = $conn->prepare($sql);
-    $like = $prefix . '%';
-    $stmt->bind_param("s", $like);
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    if ($row = $result->fetch_assoc()) {
-        $last = $row['reference_no'];
-        $num = (int)substr($last, strlen($prefix));
-        $next = $num + 1;
-    } else {
-        $next = 1;
-    }
-    $stmt->close();
-
-    return $prefix . str_pad($next, 3, '0', STR_PAD_LEFT);
-}
 
 // SEARCH BLOCK
 if (isset($obj->search_text)) {
@@ -106,7 +83,7 @@ else if (!isset($obj->edit_proforma_id)) {
 
     $balance_due = $total - $received_amount;
     $status = ($balance_due == 0) ? 'Paid' : (($received_amount == 0) ? 'Unpaid' : 'Partially Paid');
-    $reference_no = generateReferenceNo($conn);
+   $reference_no = $obj->reference_no ?? generateReferenceNo($conn);
 
     $sql = "INSERT INTO proforma (
         parties_id, name, phone, billing_address, shipping_address,
@@ -125,14 +102,10 @@ else if (!isset($obj->edit_proforma_id)) {
 
     if ($stmt->execute()) {
         $insert_id = $conn->insert_id;
-        // Assuming you have a uniqueID function like in sales
-        // If not, skip or adjust accordingly
-        // $enId = uniqueID('proforma', $insert_id);
-
         $output["head"]["code"] = 200;
         $output["head"]["msg"] = "Proforma created successfully";
         $output["body"]["reference_no"] = $reference_no;
-        $output["body"]["proforma_id"] = $insert_id; // or $enId if you use it
+        $output["body"]["proforma_id"] = $insert_id; 
     } else {
         $output["head"]["msg"] = "Failed to create: " . $stmt->error;
     }
@@ -147,7 +120,7 @@ else if (isset($obj->edit_proforma_id)) {
     $phone             = $obj->phone ?? '';
     $billing_address   = $obj->billing_address ?? '';
     $shipping_address  = $obj->shipping_address ?? '';
-    $reference_no      = $obj->reference_no ?? ''; // allow manual if needed
+    $reference_no      = $obj->reference_no ?? ''; 
     $invoice_date      = $obj->invoice_date ?? date('Y-m-d');
     $state_of_supply   = $obj->state_of_supply ?? '';
     $payment_type      = $obj->payment_type ?? '';
